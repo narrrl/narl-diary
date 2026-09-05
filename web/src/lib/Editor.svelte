@@ -45,11 +45,12 @@
     for (const spec of commands) {
       const names = [spec.name, ...(spec.aliases ?? [])]
       for (const name of names) {
-        if (name.includes('!')) continue
         Vim.defineEx(name, name, (_cm: unknown, params: { argString?: string }) => {
           const arg = (params.argString ?? '').trim()
-          // vim parses `:q!` as command `q` with the bang left in the arguments.
-          void runCommand(arg === '!' ? `${spec.name}!` : `${spec.name} ${arg}`)
+          // vim parses `:q!` as command `q` with the bang left in the arguments,
+          // so put it back on the name before handing the line over.
+          const bang = arg.startsWith('!')
+          void runCommand(`${spec.name}${bang ? '!' : ''} ${bang ? arg.slice(1).trim() : arg}`)
         })
       }
     }

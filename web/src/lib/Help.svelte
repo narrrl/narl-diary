@@ -46,6 +46,10 @@
             {#if spec.args}<span class="faint"> {spec.args}</span>{/if}
           </dt>
           <dd>{spec.help}</dd>
+          {#if spec.bang}
+            <dt>:{spec.name}!{#if spec.aliases?.length}<span class="faint"> ({spec.aliases.map((a) => `${a}!`).join(' ')})</span>{/if}</dt>
+            <dd>{spec.bang.help}</dd>
+          {/if}
         {/each}
       </dl>
     </section>

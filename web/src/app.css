@@ -198,11 +198,20 @@ input::placeholder { color: var(--fg-faint); }
 .cm-editor .cm-activeLine { background: color-mix(in srgb, var(--fg) 4%, transparent); }
 .cm-selectionBackground, .cm-content ::selection { background: var(--select) !important; }
 
-/* Insert mode: a 2px bar reads far better than the browser's hairline caret. */
-.cm-cursor, .cm-cursor-primary {
+/*
+ * Insert mode: a 2px bar reads far better than the browser's hairline caret.
+ * CodeMirror injects `.cm-cursor { border-left: 1.2px solid black }` after this
+ * stylesheet, so — like `.cm-activeLine` above — an equally specific selector
+ * loses and the caret renders black on a dark background. Qualify it to win.
+ */
+.cm-editor .cm-cursor,
+.cm-editor .cm-cursor-primary,
+.cm-editor .cm-dropCursor {
   border-left: 2px solid var(--accent);
   border-right: 0;
+  margin-left: -1px;
 }
+.cm-editor .cm-cursor-secondary { border-left-color: var(--accent-dim); }
 
 /*
  * Normal mode: the vim plugin paints the character *inside* the block cursor,

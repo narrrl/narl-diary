@@ -16,6 +16,8 @@ export interface CommandSpec {
   args?: string
   help: string
   run: (arg: string) => void | Promise<void>
+  /** The forcing variant, `:name!` — vim hands the bang over as an argument. */
+  bang?: { help: string; run: (arg: string) => void | Promise<void> }
 }
 
 const requireOpen = () => {
@@ -59,16 +61,15 @@ export const commands: CommandSpec[] = [
       }
       hooks.focusList()
     },
-  },
-  {
-    name: 'q!',
-    help: 'discard changes and close the editor',
-    run: async () => {
-      const open = diary.open
-      diary.editing = false
-      diary.dirty = false
-      if (open) await diary.guard(() => diary.openEntry(open.id))
-      hooks.focusList()
+    bang: {
+      help: 'discard changes and close the editor',
+      run: async () => {
+        const open = diary.open
+        diary.editing = false
+        diary.dirty = false
+        if (open) await diary.guard(() => diary.openEntry(open.id))
+        hooks.focusList()
+      },
     },
   },
   {
@@ -244,9 +245,16 @@ export async function runCommand(line: string): Promise<void> {
     return
   }
 
-  const spec = lookup.get(head)
+  // `:q!`, `:quit!` — the bang is part of the command name, not an argument.
+  const forced = head.endsWith('!')
+  const spec = lookup.get(forced ? head.slice(0, -1) : head)
   if (!spec) {
     diary.say(`E492: not an editor command: ${head}`, 'error')
+    return
+  }
+  if (forced) {
+    if (!spec.bang) return diary.say(`E477: no ! allowed: ${head}`, 'error')
+    await spec.bang.run(arg)
     return
   }
   await spec.run(arg)
