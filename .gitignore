@@ -1,0 +1,12 @@
+# rust
+/target
+
+# runtime state: sqlite db + uploaded media
+/data
+
+# frontend
+/web/dist
+/web/node_modules
+
+# secrets
+.env
