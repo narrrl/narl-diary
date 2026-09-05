@@ -2,6 +2,7 @@ import { api, ApiError, type Entry, type EntrySummary, type MediaFile } from './
 
 export type Pane = 'list' | 'entry'
 export type Flash = { text: string; kind: 'info' | 'error' } | null
+export type Theme = 'mocha' | 'green' | 'amber' | 'ice'
 
 /**
  * The whole application state. It is deliberately one object: the keyboard
@@ -29,9 +30,7 @@ class Diary {
   overlay = $state<'none' | 'help' | 'media'>('none')
   media = $state<MediaFile[]>([])
 
-  theme = $state<'green' | 'amber' | 'ice'>(
-    (localStorage.getItem('diary:theme') as 'green' | 'amber' | 'ice') ?? 'green',
-  )
+  theme = $state<Theme>((localStorage.getItem('diary:theme') as Theme) ?? 'mocha')
 
   vimEnabled = $state(localStorage.getItem('diary:vim') !== 'off')
 
@@ -177,7 +176,7 @@ class Diary {
     this.media = await api.listMedia()
   }
 
-  setTheme(theme: 'green' | 'amber' | 'ice') {
+  setTheme(theme: Theme) {
     this.theme = theme
     localStorage.setItem('diary:theme', theme)
   }

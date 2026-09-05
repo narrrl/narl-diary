@@ -59,7 +59,7 @@ The desktop UI is modal. In the browse pane:
 Inside the editor the full vim keymap is live — `w`/`b`, `dd`, `ciw`, visual
 mode, macros, `:w` to write. `:help` lists every ex command; the useful ones are
 `:w`, `:wq`, `:q!`, `:new [yyyy-mm-dd]`, `:date`, `:title`, `:share`, `:link`,
-`:upload`, `:media`, `:search`, `:set theme=green|amber|ice` and `:set novim`.
+`:upload`, `:media`, `:search`, `:set theme=mocha|green|amber|ice` and `:set novim`.
 
 On a touch device modal editing is turned off and the same actions are buttons.
 

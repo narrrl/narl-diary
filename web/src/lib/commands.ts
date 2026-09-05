@@ -1,4 +1,4 @@
-import { diary } from './store.svelte'
+import { diary, type Theme } from './store.svelte'
 import { parseDay } from './util'
 
 /** Filled in by App.svelte so ex-commands can reach the DOM-bound bits. */
@@ -194,13 +194,13 @@ export const commands: CommandSpec[] = [
   {
     name: 'set',
     args: '<option>',
-    help: 'theme=green|amber|ice, vim, novim',
+    help: 'theme=mocha|green|amber|ice, vim, novim',
     run: (arg) => {
       const option = arg.trim()
       if (option === 'vim') return diary.setVim(true), diary.say('vim keys on')
       if (option === 'novim') return diary.setVim(false), diary.say('vim keys off')
-      const theme = /^theme=(green|amber|ice)$/.exec(option)?.[1]
-      if (theme) return diary.setTheme(theme as 'green' | 'amber' | 'ice'), diary.say(`theme ${theme}`)
+      const theme = /^theme=(mocha|green|amber|ice)$/.exec(option)?.[1]
+      if (theme) return diary.setTheme(theme as Theme), diary.say(`theme ${theme}`)
       diary.say(`unknown option: ${option}`, 'error')
     },
   },

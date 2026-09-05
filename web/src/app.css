@@ -1,5 +1,25 @@
 /* ── palette ─────────────────────────────────────────────────────────────── */
-:root {
+/* Catppuccin Mocha, accented with the palette's red. */
+:root, [data-theme='mocha'] {
+  --bg: #1e1e2e;
+  --bg-alt: #181825;
+  --bg-lift: #313244;
+  --line: #45475a;
+  --fg: #cdd6f4;
+  --fg-dim: #a6adc8;
+  --fg-faint: #6c7086;
+  --accent: #f38ba8;
+  --accent-dim: #a35b70;
+  --warn: #f9e2af;
+  --error: #eba0ac;
+  --select: #4a3543;
+
+  --font: ui-monospace, "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace;
+  --radius: 2px;
+  color-scheme: dark;
+}
+
+[data-theme='green'] {
   --bg: #0b0e0d;
   --bg-alt: #101513;
   --bg-lift: #161d1a;
@@ -12,10 +32,6 @@
   --warn: #f2c14e;
   --error: #ff6b6b;
   --select: #1c3a2c;
-
-  --font: ui-monospace, "JetBrains Mono", "Fira Code", "SF Mono", Menlo, Consolas, monospace;
-  --radius: 2px;
-  color-scheme: dark;
 }
 
 [data-theme='amber'] {
@@ -28,6 +44,8 @@
   --fg-faint: #4d3f28;
   --accent: #ffb454;
   --accent-dim: #b57a25;
+  --warn: #f2c14e;
+  --error: #ff6b6b;
   --select: #3a2a10;
 }
 
@@ -41,6 +59,8 @@
   --fg-faint: #3d4f60;
   --accent: #7cc7ff;
   --accent-dim: #3d84b8;
+  --warn: #f2c14e;
+  --error: #ff6b6b;
   --select: #17324a;
 }
 
@@ -169,11 +189,40 @@ input::placeholder { color: var(--fg-faint); }
 }
 .cm-content { caret-color: var(--accent); }
 .cm-gutters { background: transparent; border: 0; color: var(--fg-faint); }
-.cm-activeLineGutter { background: transparent; color: var(--fg-dim); }
-.cm-activeLine { background: rgb(255 255 255 / 2.5%); }
+.cm-editor .cm-activeLineGutter { background: transparent; color: var(--fg-dim); }
+/*
+ * CodeMirror injects its own `.cm-activeLine` rule (a light blue #cceeff44)
+ * into the document after this stylesheet, so an equally specific selector
+ * loses and the current line renders as a bright box. Qualify it to win.
+ */
+.cm-editor .cm-activeLine { background: color-mix(in srgb, var(--fg) 4%, transparent); }
 .cm-selectionBackground, .cm-content ::selection { background: var(--select) !important; }
-.cm-fat-cursor { background: var(--accent) !important; opacity: 1 !important; }
-.cm-animate-fat-cursor { background: var(--accent) !important; }
+
+/* Insert mode: a 2px bar reads far better than the browser's hairline caret. */
+.cm-cursor, .cm-cursor-primary {
+  border-left: 2px solid var(--accent);
+  border-right: 0;
+}
+
+/*
+ * Normal mode: the vim plugin paints the character *inside* the block cursor,
+ * inheriting its syntax colour, so an accent-coloured glyph — a heading's `#`,
+ * a link — disappears against the accent-coloured block. Force the glyph to the
+ * background colour instead, which is legible whatever the token was.
+ */
+.cm-fat-cursor,
+.cm-animate-fat-cursor {
+  background: var(--accent) !important;
+  color: var(--bg) !important;
+  opacity: 1 !important;
+}
+.cm-fat-cursor.cm-cursor-secondary { background: var(--accent-dim) !important; }
+/* Unfocused, the plugin hardcodes a pink outline; keep it on-theme. */
+.cm-editor:not(.cm-focused) .cm-fat-cursor {
+  background: none !important;
+  outline: 1px solid var(--accent-dim) !important;
+  color: transparent !important;
+}
 .cm-panels { background: var(--bg-alt); color: var(--fg); border-color: var(--line); }
 .cm-vim-panel { padding: 2px 8px; background: var(--bg-alt); }
 .cm-vim-panel input { background: transparent; border: 0; color: var(--accent); }
