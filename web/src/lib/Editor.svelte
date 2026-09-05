@@ -182,7 +182,7 @@
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           diary.draft.body = update.state.doc.toString()
-          diary.dirty = true
+          diary.touch()
         }
       }),
       EditorView.domEventHandlers({

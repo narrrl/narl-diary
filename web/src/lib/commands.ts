@@ -107,7 +107,10 @@ export const commands: CommandSpec[] = [
         const open = diary.open
         diary.editing = false
         diary.dirty = false
-        if (open) await diary.guard(() => diary.openEntry(open.id))
+        if (open) {
+          diary.dropStash(open.id)
+          await diary.guard(() => diary.openEntry(open.id))
+        }
         hooks.focusList()
       },
     },
@@ -168,6 +171,7 @@ export const commands: CommandSpec[] = [
         const open = requireOpen()
         if (!open) return
         diary.dirty = false
+        diary.dropStash(open.id)
         await diary.guard(() => diary.openEntry(open.id, diary.editing))
         diary.say(`entry:${open.id} reloaded`)
       },

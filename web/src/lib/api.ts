@@ -12,6 +12,7 @@ export interface Entry {
   id: number
   title: string
   body: string
+  excerpt: string
   created_at: number
   updated_at: number
   shared: boolean

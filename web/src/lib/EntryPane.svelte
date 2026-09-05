@@ -56,7 +56,7 @@
       class="title"
       placeholder="title (optional)"
       bind:value={diary.draft.title}
-      oninput={() => (diary.dirty = true)}
+      oninput={() => diary.touch()}
       onkeydown={(event) => {
         if (event.key === 'Enter') {
           event.preventDefault()

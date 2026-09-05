@@ -28,6 +28,9 @@ pub struct Entry {
     pub id: i64,
     pub title: String,
     pub body: String,
+    /// The same preview the list shows, so a client that has just saved can
+    /// patch its list row without re-reading the whole list.
+    pub excerpt: String,
     pub created_at: i64,
     pub updated_at: i64,
     pub shared: bool,
@@ -252,10 +255,12 @@ async fn load(state: &AppState, id: i64) -> AppResult<Entry> {
     .ok_or(AppError::NotFound)?;
 
     let share_token: Option<String> = row.get("share_token");
+    let body: String = row.get("body");
     Ok(Entry {
         id: row.get("id"),
         title: row.get("title"),
-        body: row.get("body"),
+        excerpt: excerpt(&body.chars().take(HEAD_CHARS).collect::<String>()),
+        body,
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
         shared: share_token.is_some(),
