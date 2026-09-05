@@ -3,10 +3,11 @@
 //! The remote layout is deliberately the local one, not a rendering of it:
 //!
 //! ```text
-//! narl-diary/            the device's sync root
-//!   RESTORE.txt          what this is and how to put it back
-//!   diary.db             a consistent snapshot, one revision per change
-//!   uploads/<uuid>       every uploaded file, under the name the database knows
+//! narl-diary/            the device's sync root — folders only, per Proton
+//!   data/                the diary's data directory, copied
+//!     RESTORE.txt        what this is and how to put it back
+//!     diary.db           a consistent snapshot, one revision per change
+//!     uploads/<uuid>     every uploaded file, under the name the database knows
 //! ```
 //!
 //! so restoring is copying two things into an empty data directory, with no
@@ -33,7 +34,9 @@ pub struct Summary {
 }
 
 const RESTORE: &str = "\
-This is a Proton Drive mirror of a ~/diary server.
+This is a Proton Drive mirror of a ~/diary server. It is the contents of the
+server's data directory, one folder down from the device root because Proton
+does not allow files directly in it.
 
   diary.db          the whole diary: entries, media metadata, share tokens
   uploads/<uuid>    every uploaded file; diary.db gives each one its real name
@@ -55,7 +58,7 @@ pub async fn run(
     db: &SqlitePool,
     config: &Config,
     client: &ProtonDriveClient,
-    root: &NodeUid,
+    data_folder: &NodeUid,
     uploads_folder: &NodeUid,
 ) -> Result<Summary> {
     let mut mirror = Mirror {
@@ -67,10 +70,10 @@ pub async fn run(
     // Written once, and only ever re-read by a human who has lost everything
     // else — so it goes up before the data it explains.
     mirror
-        .bytes(root, "RESTORE.txt", "RESTORE.txt", "text/plain", RESTORE.as_bytes())
+        .bytes(data_folder, "RESTORE.txt", "RESTORE.txt", "text/plain", RESTORE.as_bytes())
         .await?;
 
-    mirror.database(config, root).await?;
+    mirror.database(config, data_folder).await?;
     mirror.media(config, uploads_folder).await?;
 
     if config.backup.prune {
@@ -94,7 +97,7 @@ impl Mirror<'_> {
     /// write-ahead log already folded in. Copying the file by hand while the
     /// diary is being written to would produce something that may or may not
     /// open.
-    async fn database(&mut self, config: &Config, root: &NodeUid) -> Result<()> {
+    async fn database(&mut self, config: &Config, data_folder: &NodeUid) -> Result<()> {
         let snapshot = config.data_dir.join(".diary-backup.db");
         // A snapshot left behind by a killed run would fail the next one:
         // VACUUM INTO refuses to write over an existing file.
@@ -107,7 +110,7 @@ impl Mirror<'_> {
             .context("could not snapshot the database")?;
 
         let result = self
-            .file(root, "diary.db", "diary.db", "application/vnd.sqlite3", &snapshot)
+            .file(data_folder, "diary.db", "diary.db", "application/vnd.sqlite3", &snapshot)
             .await;
 
         let _ = tokio::fs::remove_file(&snapshot).await;

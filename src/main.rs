@@ -36,7 +36,14 @@ async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
 
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_env("DIARY_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
+        // rPGP warns on every key it re-serialises differently to how Proton
+        // wrote it — a cosmetic packet-header difference, once per unlock, that
+        // otherwise buries the backup's own log lines. `DIARY_LOG` overrides
+        // all of this when something needs looking at.
+        .with(
+            EnvFilter::try_from_env("DIARY_LOG")
+                .unwrap_or_else(|_| EnvFilter::new("info,pgp=error")),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 

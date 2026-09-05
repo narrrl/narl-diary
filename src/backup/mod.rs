@@ -161,9 +161,15 @@ impl Backup {
         Ok(Some(summary))
     }
 
-    /// The two folders the mirror writes into: the device's root, and the
-    /// `uploads/` folder inside it. Both are registered on first use and then
+    /// The two folders the mirror writes into: `data/` on the device, and
+    /// `data/uploads/` inside it. Both are registered on first use and then
     /// remembered.
+    ///
+    /// Nothing is written to the device's own root, because Proton refuses it —
+    /// a device root holds folders, and a file there is answered with 422
+    /// "Cannot create file at the root of a device". `data/` is that folder,
+    /// and it is also the honest name for what it holds: the diary's data
+    /// directory, copied.
     ///
     /// Remembering them is the point. Resolving either by name means listing a
     /// folder's children and decrypting every name in it, and Proton asks
@@ -175,7 +181,7 @@ impl Backup {
     async fn device_folders(&self, client: &ProtonDriveClient) -> Result<(NodeUid, NodeUid)> {
         let name = self.config.backup.device_name.clone();
         let cached_name = self.state_get("device_name").await?;
-        let fresh = cached_name.as_deref() != Some(name.as_str());
+        let mut fresh = cached_name.as_deref() != Some(name.as_str());
 
         let root = match self.cached_node(client, "device_root", fresh).await? {
             Some(uid) => uid,
@@ -185,9 +191,22 @@ impl Backup {
                 self.state_set("device_uid", device.uid.as_str()).await?;
                 self.state_set("device_root", &device.root_folder_uid.to_string())
                     .await?;
-                // A new device root cannot hold the old uploads folder.
-                self.state_set("device_uploads", "").await?;
+                // Folders remembered inside the old root mean nothing in a new
+                // one, whichever of them still resolves.
+                fresh = true;
                 device.root_folder_uid
+            }
+        };
+
+        let data = match self.cached_node(client, "device_data", fresh).await? {
+            Some(uid) => uid,
+            None => {
+                let uid = client
+                    .create_folder_path(&root, "data")
+                    .await
+                    .context("could not create the data folder on the device")?;
+                self.state_set("device_data", &uid.to_string()).await?;
+                uid
             }
         };
 
@@ -195,7 +214,7 @@ impl Backup {
             Some(uid) => uid,
             None => {
                 let uid = client
-                    .create_folder_path(&root, "uploads")
+                    .create_folder_path(&data, "uploads")
                     .await
                     .context("could not create the uploads folder on the device")?;
                 self.state_set("device_uploads", &uid.to_string()).await?;
@@ -204,7 +223,7 @@ impl Backup {
         };
 
         self.set(move |s| s.device = Some(name.clone()));
-        Ok((root, uploads))
+        Ok((data, uploads))
     }
 
     /// A remembered node, if it is still remembered and still there.

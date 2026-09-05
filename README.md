@@ -114,16 +114,17 @@ it has been quiet for `DIARY_BACKUP_DEBOUNCE_SEC` the mirror runs, with
 sixty. The device folder ends up as a copy of the data directory:
 
 ```text
-narl-diary/
-  RESTORE.txt        what this is, and how to put it back
-  diary.db           a VACUUM INTO snapshot — consistent, no write-ahead log
-  uploads/<uuid>     every uploaded file, under the name the database knows
+narl-diary/          the device — Proton allows only folders in a device root
+  data/              the diary's data directory, copied
+    RESTORE.txt      what this is, and how to put it back
+    diary.db         a VACUUM INTO snapshot — consistent, no write-ahead log
+    uploads/<uuid>   every uploaded file, under the name the database knows
 ```
 
 `diary.db` becomes a new revision each time, so Proton Drive keeps the older
 ones and a mistake that was mirrored can still be undone. Uploads are written
-once and never rewritten. Restoring is copying both back into an empty data
-directory — no tool in between, which is the point.
+once and never rewritten. Restoring is copying the contents of `data/`
+back into an empty data directory — no tool in between, which is the point.
 
 | command | what it does |
 | --- | --- |
