@@ -373,11 +373,15 @@ export const commands: CommandSpec[] = [
     name: 'set',
     args: '<option>',
     group: 'view',
-    help: 'theme=mocha|green|amber|ice, vim, novim',
+    help: 'theme=mocha|green|amber|ice, vim, novim, clipboard, noclipboard',
     run: (arg) => {
       const option = arg.trim()
       if (option === 'vim') return diary.setVim(true), diary.say('vim keys on')
       if (option === 'novim') return diary.setVim(false), diary.say('vim keys off')
+      if (option === 'clipboard')
+        return diary.setClipboard(true), diary.say('yanks go to the system clipboard')
+      if (option === 'noclipboard')
+        return diary.setClipboard(false), diary.say('yanks stay in vim registers')
       const theme = /^theme=(\w+)$/.exec(option)?.[1]
       if (theme) return setTheme(theme)
       diary.say(`unknown option: ${option}`, 'error')

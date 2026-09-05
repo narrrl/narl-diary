@@ -18,6 +18,7 @@
   let cmdline = $state<string | null>(null)
   let fileInput = $state<HTMLInputElement>()
   let shell = $state<HTMLDivElement>()
+  let overlayEl = $state<HTMLDivElement>()
   let pending = $state('')
 
   if (!shareToken) void diary.boot()
@@ -30,6 +31,17 @@
     hooks.pickFiles = () => fileInput?.click()
     hooks.focusList = () => shell?.focus()
     hooks.openCommandLine = (initial) => (cmdline = initial)
+  })
+
+  /*
+   * The overlay takes focus while it is up, so its keys (q, ?, esc) reach the
+   * window handler instead of being swallowed by the editor underneath.
+   */
+  $effect(() => {
+    if (diary.overlay !== 'none') {
+      overlayEl?.focus()
+      return () => (diary.editing ? hooks.focusEditor() : shell?.focus())
+    }
   })
 
   // Guard against losing a half-written entry to a stray refresh.
@@ -81,17 +93,20 @@
       }
     }
 
+    if (diary.overlay !== 'none') {
+      if (event.key === 'q' || event.key === '?') {
+        event.preventDefault()
+        diary.overlay = 'none'
+      }
+      return
+    }
+
     if (cmdline !== null || isTypingTarget(event.target)) return
     if (event.ctrlKey || event.metaKey || event.altKey) return
 
     const key = event.key
     const previous = pending
     pending = ''
-
-    if (diary.overlay !== 'none') {
-      if (key === 'q' || key === '?') diary.overlay = 'none'
-      return
-    }
 
     // Two-key sequences: gg and dd.
     if (previous === 'g' && key === 'g') {
@@ -216,8 +231,9 @@
     {/if}
 
     {#if diary.overlay !== 'none'}
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div class="overlay" onclick={(e) => e.target === e.currentTarget && (diary.overlay = 'none')}>
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
+      <div class="overlay" tabindex="-1" bind:this={overlayEl} onclick={(e) => e.target === e.currentTarget && (diary.overlay = 'none')}
+      >
         {#if diary.overlay === 'help'}<Help />{:else}<MediaBrowser />{/if}
       </div>
     {/if}

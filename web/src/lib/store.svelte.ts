@@ -34,6 +34,9 @@ class Diary {
 
   vimEnabled = $state(localStorage.getItem('diary:vim') !== 'off')
 
+  /** Mirror vim yanks and deletes into the system clipboard, like `set clipboard=unnamed`. */
+  clipboard = $state(localStorage.getItem('diary:clipboard') !== 'off')
+
   get selected(): EntrySummary | undefined {
     return this.entries[this.cursor]
   }
@@ -184,6 +187,11 @@ class Diary {
   setVim(enabled: boolean) {
     this.vimEnabled = enabled
     localStorage.setItem('diary:vim', enabled ? 'on' : 'off')
+  }
+
+  setClipboard(enabled: boolean) {
+    this.clipboard = enabled
+    localStorage.setItem('diary:clipboard', enabled ? 'on' : 'off')
   }
 
   /** Surface a failed API call in the status line instead of the console. */

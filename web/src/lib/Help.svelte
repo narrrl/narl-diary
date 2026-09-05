@@ -16,7 +16,7 @@
     ['x · dd', 'delete the entry (asks first)'],
     [':', 'command line'],
     ['Ctrl-S', 'save, from anywhere'],
-    ['?', 'this screen'],
+    ['?', 'this screen — in the editor too'],
   ]
 
   const titles: Record<Group, string> = {
@@ -75,7 +75,9 @@
   <footer class="faint">
     inside the editor the full vim keymap is live — hjkl, w/b, dd, ciw, visual mode, macros, and
     <span class="accent">:w</span> to write. drop or paste an image, video or audio file into the
-    editor to attach it. <span class="accent">:12</span> jumps straight to entry 12.
+    editor to attach it. <span class="accent">:12</span> jumps straight to entry 12. yanks and
+    deletes are copied to the system clipboard —
+    <span class="accent">:set noclipboard</span> keeps them in vim's registers.
   </footer>
 </div>
 

@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /* The vim register controller is global, so it is wrapped once per page. */
+  let clipboardMirrored = false
+</script>
+
 <script lang="ts">
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
   import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -53,12 +58,24 @@
         borderColor: 'var(--line)',
       },
       '.cm-panels-bottom': { borderTop: '1px solid var(--line)' },
-      // The `:` prompt is a bare text node in the panel; the input follows it.
-      '.cm-vim-panel': { padding: '2px 8px', color: 'var(--accent)' },
+      /*
+       * The `:` prompt is a bare text node in the panel; the input follows it.
+       * The input is an inline-block whose baseline sits below the text node's,
+       * so the two are laid out as flex items instead of aligned by baseline.
+       */
+      '.cm-vim-panel': {
+        padding: '2px 8px',
+        color: 'var(--accent)',
+        display: 'flex',
+        alignItems: 'center',
+      },
       '.cm-vim-panel input': {
         fontFamily: 'inherit',
+        fontSize: 'inherit',
+        lineHeight: 'inherit',
         color: 'var(--accent)',
         caretColor: 'var(--accent)',
+        flex: '1',
       },
     },
     { dark: true },
@@ -77,6 +94,34 @@
           void runCommand(`${spec.name}${bang ? '!' : ''} ${bang ? arg.slice(1).trim() : arg}`)
         })
       }
+    }
+  }
+
+  /**
+   * `set clipboard=unnamed`, in effect: every yank or delete that lands in the
+   * unnamed register is copied out to the system clipboard too. An explicit
+   * register (`"ay`) is left alone, and `"+p` still pastes the clipboard back.
+   */
+  function mirrorUnnamedRegisterToClipboard() {
+    if (clipboardMirrored) return
+    const registers = Vim.getRegisterController?.()
+    if (!registers) return
+    clipboardMirrored = true
+    const push = registers.pushText.bind(registers)
+    registers.pushText = (name, operator, text, linewise, blockwise) => {
+      push(name, operator, text, linewise, blockwise)
+      if (!name && text && diary.clipboard) void diary.copy(text)
+    }
+  }
+
+  /**
+   * `?` is vim's search-backwards, but the diary advertises it as the help key
+   * everywhere else, so it opens the reference here too. `/` still searches.
+   */
+  function bindHelpKey() {
+    Vim.defineAction('diaryHelp', () => void runCommand('help'))
+    for (const context of ['normal', 'visual'] as const) {
+      Vim.mapCommand('?', 'action', 'diaryHelp', {}, { context })
     }
   }
 
@@ -108,6 +153,8 @@
 
   onMount(() => {
     bridgeExCommands()
+    bindHelpKey()
+    mirrorUnnamedRegisterToClipboard()
 
     const extensions = [
       ...(diary.vimEnabled ? [vim({ status: false })] : []),
