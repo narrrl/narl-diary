@@ -26,6 +26,39 @@ static MEDIA_REF: LazyLock<Regex> = LazyLock::new(|| {
         .expect("static regex is valid")
 });
 
+/// An upload is attacker-controlled content served from our own origin, so the
+/// browser is only ever told it is a type that cannot execute script. Anything
+/// else — `text/html`, `image/svg+xml`, an unrecognised type — is stored and
+/// served as an opaque download instead.
+fn sanitize_mime(raw: &str) -> String {
+    let base = raw
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+
+    let (top, sub) = base.split_once('/').unwrap_or_default();
+    let inlineable = match top {
+        // SVG is a document: it can carry <script> and same-origin markup.
+        "image" => sub != "svg+xml" && !sub.is_empty(),
+        "video" | "audio" => !sub.is_empty(),
+        "text" => sub == "plain",
+        "application" => sub == "pdf",
+        _ => false,
+    };
+
+    if inlineable {
+        base
+    } else {
+        "application/octet-stream".to_string()
+    }
+}
+
+fn is_inline(mime: &str) -> bool {
+    mime != "application/octet-stream"
+}
+
 #[derive(Serialize)]
 pub struct Media {
     pub id: String,
@@ -75,6 +108,7 @@ pub async fn upload(
                     .first_or_octet_stream()
                     .to_string()
             });
+        let mime = sanitize_mime(&mime);
 
         let data = field
             .bytes()
@@ -151,9 +185,12 @@ pub async fn stream_media(state: &AppState, id: &str) -> AppResult<Response> {
         .await?
         .ok_or(AppError::NotFound)?;
 
-    let mime: String = row.get("mime");
     let filename: String = row.get("filename");
     let size: i64 = row.get("size");
+    // Re-checked on the way out, not just on the way in, so rows written before
+    // the allowlist existed cannot be served as something executable either.
+    let mime = sanitize_mime(&row.get::<String, _>("mime"));
+    let disposition = if is_inline(&mime) { "inline" } else { "attachment" };
 
     let file = tokio::fs::File::open(state.config.uploads_dir().join(id))
         .await
@@ -163,10 +200,20 @@ pub async fn stream_media(state: &AppState, id: &str) -> AppResult<Response> {
         [
             (header::CONTENT_TYPE, mime),
             (header::CONTENT_LENGTH, size.to_string()),
-            (header::CACHE_CONTROL, "private, max-age=31536000".into()),
+            (header::CACHE_CONTROL, "private, max-age=31536000".to_string()),
             (
                 header::CONTENT_DISPOSITION,
-                format!("inline; filename*=UTF-8''{}", urlencode(&filename)),
+                format!(
+                    "{disposition}; filename*=UTF-8''{}",
+                    urlencode(&filename)
+                ),
+            ),
+            // Belt and braces: never let the browser sniff past the type above,
+            // and strip the ambient authority of the origin from the response.
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff".to_string()),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "sandbox; default-src 'none'".to_string(),
             ),
         ],
         Body::from_stream(ReaderStream::new(file)),
@@ -221,4 +268,36 @@ fn urlencode(value: &str) -> String {
             _ => format!("%{b:02X}"),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sanitize_mime;
+
+    #[test]
+    fn keeps_types_that_cannot_execute() {
+        for mime in ["image/png", "image/jpeg", "video/mp4", "audio/ogg", "text/plain", "application/pdf"] {
+            assert_eq!(sanitize_mime(mime), mime);
+        }
+    }
+
+    #[test]
+    fn neutralises_script_capable_types() {
+        for mime in [
+            "text/html",
+            "image/svg+xml",
+            "application/xhtml+xml",
+            "application/javascript",
+            "text/html; charset=utf-8",
+            "",
+            "nonsense",
+        ] {
+            assert_eq!(sanitize_mime(mime), "application/octet-stream", "{mime}");
+        }
+    }
+
+    #[test]
+    fn normalises_case_and_parameters() {
+        assert_eq!(sanitize_mime("IMAGE/PNG; charset=binary"), "image/png");
+    }
 }
