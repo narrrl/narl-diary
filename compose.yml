@@ -1,0 +1,33 @@
+services:
+  diary:
+    build: .
+    image: narl-diary:latest
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # These win over anything in .env: inside the container the app must
+      # listen on all interfaces and keep its state on the volume.
+      DIARY_BIND: 0.0.0.0:4242
+      DIARY_DATA_DIR: /data
+    volumes:
+      - diary-data:/data
+    networks:
+      - internal_net
+    ports:
+      # Localhost only. Drop this in the override when a reverse proxy
+      # reaches the container over its own network instead.
+      - "127.0.0.1:4242:4242"
+    healthcheck:
+      # No extra tooling in the image, so probe the port with bash directly.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/4242"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+volumes:
+  diary-data:
+
+networks:
+  internal_net:

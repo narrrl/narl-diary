@@ -92,3 +92,22 @@ Everything except the two share routes requires the session cookie.
 Put a TLS-terminating reverse proxy in front of it, point it at `DIARY_BIND`,
 and set `DIARY_SECURE_COOKIE=1`. Nothing else is needed: no database server, no
 runtime dependencies, no build tools on the host.
+
+### Docker
+
+```sh
+cp .env.example .env   # set DIARY_USER, DIARY_PASSWORD, DIARY_SECRET
+docker compose up -d --build
+```
+
+The image builds the frontend with bun and the binary with cargo, then ships
+only the binary on `debian:trixie-slim` (~86 MB), running as an unprivileged
+user. `DIARY_BIND` and `DIARY_DATA_DIR` are forced in `compose.yml`, so the
+values in `.env` do not have to change; everything else is read from `.env`.
+Database and uploads live in the `diary-data` volume and survive recreation.
+
+By default the port is published on `127.0.0.1:4242` only. To serve it through
+traefik instead, copy `compose.override.yml.example` to `compose.override.yml`
+and adjust the host — it joins the external `narl` network, drops the published
+port, and routes to container port 4242. Set `DIARY_SECURE_COOKIE=1` in `.env`
+once it is served over HTTPS.

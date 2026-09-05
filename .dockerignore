@@ -1,0 +1,11 @@
+.git
+.env
+target
+data
+web/dist
+web/node_modules
+README.md
+Makefile
+Dockerfile
+.dockerignore
+compose*.yml

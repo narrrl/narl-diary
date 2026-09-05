@@ -10,3 +10,6 @@
 
 # secrets
 .env
+
+# host-specific compose overlay
+compose.override.yml
