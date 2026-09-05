@@ -104,9 +104,9 @@ pub async fn serve_media(
 ) -> AppResult<Response> {
     let allowed = sqlx::query(
         "SELECT 1 AS ok
-         FROM media m
-         JOIN entries e ON e.id = m.entry_id
-         WHERE m.id = ?1 AND e.share_token = ?2",
+         FROM entry_media em
+         JOIN entries e ON e.id = em.entry_id
+         WHERE em.media_id = ?1 AND e.share_token = ?2",
     )
     .bind(&id)
     .bind(&token)

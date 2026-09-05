@@ -212,13 +212,9 @@ pub async fn remove(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let media_ids: Vec<String> = sqlx::query("SELECT id FROM media WHERE entry_id = ?1")
-        .bind(id)
-        .fetch_all(&state.db)
-        .await?
-        .into_iter()
-        .map(|row| row.get("id"))
-        .collect();
+    // Collected before the delete, which takes the entry_media rows with it.
+    // Files another entry also embeds are left alone.
+    let orphans = media::exclusive_media(&state.db, id).await?;
 
     let affected = sqlx::query("DELETE FROM entries WHERE id = ?1")
         .bind(id)
@@ -230,7 +226,7 @@ pub async fn remove(
         return Err(AppError::NotFound);
     }
 
-    for media_id in media_ids {
+    for media_id in orphans {
         media::delete_media(&state, &media_id).await?;
     }
 

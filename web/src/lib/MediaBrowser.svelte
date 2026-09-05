@@ -5,8 +5,13 @@
   import { diary } from './store.svelte'
   import { formatBytes, formatStamp } from './util'
 
-  async function remove(id: string, filename: string) {
-    if (!confirm(`delete ${filename}? entries that embed it will break.`)) return
+  const usage = (entryIds: number[]) =>
+    entryIds.length === 0 ? 'unattached' : entryIds.map((id) => `entry:${id}`).join(' ')
+
+  async function remove(id: string, filename: string, entryIds: number[]) {
+    const used = entryIds.length === 1 ? '1 entry' : `${entryIds.length} entries`
+    const warning = entryIds.length > 0 ? ` it is embedded in ${used}, which will break.` : ''
+    if (!confirm(`delete ${filename}?${warning}`)) return
     await diary.guard(async () => {
       await api.deleteMedia(id)
       await diary.loadMedia()
@@ -36,7 +41,7 @@
           <span class="name">{file.filename}</span>
           <span class="faint">
             {formatBytes(file.size)} · {formatStamp(file.created_at)} ·
-            {file.entry_id ? `entry:${file.entry_id}` : 'unattached'}
+            {usage(file.entry_ids)}
           </span>
         </div>
 
@@ -50,7 +55,7 @@
             >
           {/if}
           <button onclick={() => diary.copy(location.origin + file.url)}>copy url</button>
-          <button onclick={() => remove(file.id, file.filename)}>rm</button>
+          <button onclick={() => remove(file.id, file.filename, file.entry_ids)}>rm</button>
         </div>
       </li>
     {:else}

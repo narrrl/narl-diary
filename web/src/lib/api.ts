@@ -33,7 +33,8 @@ export interface MediaFile {
   size: number
   created_at: number
   url: string
-  entry_id: number | null
+  /** Every entry that embeds this file — a file may be used by several. */
+  entry_ids: number[]
 }
 
 export class ApiError extends Error {

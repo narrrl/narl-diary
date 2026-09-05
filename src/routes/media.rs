@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{collections::BTreeSet, sync::LazyLock};
 
 use axum::{
     body::Body,
@@ -67,11 +67,21 @@ pub struct Media {
     pub size: i64,
     pub created_at: i64,
     pub url: String,
-    pub entry_id: Option<i64>,
+    /// Every entry that embeds this file, which may be none or several.
+    pub entry_ids: Vec<i64>,
 }
 
 fn row_to_media(row: &sqlx::sqlite::SqliteRow) -> Media {
     let id: String = row.get("id");
+    // `group_concat` gives "3,7" or NULL; queries that do not ask for it at all
+    // (a fresh upload) get an empty list.
+    let entry_ids = row
+        .try_get::<Option<String>, _>("entry_ids")
+        .ok()
+        .flatten()
+        .map(|joined| joined.split(',').filter_map(|n| n.parse().ok()).collect())
+        .unwrap_or_default();
+
     Media {
         url: format!("/api/media/{id}"),
         id,
@@ -79,7 +89,7 @@ fn row_to_media(row: &sqlx::sqlite::SqliteRow) -> Media {
         mime: row.get("mime"),
         size: row.get("size"),
         created_at: row.get("created_at"),
-        entry_id: row.get("entry_id"),
+        entry_ids,
     }
 }
 
@@ -131,7 +141,7 @@ pub async fn upload(
         let row = sqlx::query(
             "INSERT INTO media (id, filename, mime, size, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
-             RETURNING id, entry_id, filename, mime, size, created_at",
+             RETURNING id, filename, mime, size, created_at",
         )
         .bind(&id)
         .bind(&filename)
@@ -152,8 +162,10 @@ pub async fn upload(
 
 pub async fn list(_: Session, State(state): State<AppState>) -> AppResult<Json<Vec<Media>>> {
     let rows = sqlx::query(
-        "SELECT id, entry_id, filename, mime, size, created_at
-         FROM media ORDER BY created_at DESC LIMIT 500",
+        "SELECT m.id, m.filename, m.mime, m.size, m.created_at,
+                (SELECT group_concat(em.entry_id)
+                 FROM entry_media em WHERE em.media_id = m.id) AS entry_ids
+         FROM media m ORDER BY m.created_at DESC LIMIT 500",
     )
     .fetch_all(&state.db)
     .await?;
@@ -237,25 +249,56 @@ pub async fn delete_media(state: &AppState, id: &str) -> AppResult<()> {
 
 /// Attach every media file the body embeds to this entry, and detach the ones
 /// it no longer mentions so they stop being reachable through its share link.
+/// Other entries keep whatever they embed; this only rewrites one entry's row.
 pub async fn link_to_entry(db: &SqlitePool, entry_id: i64, body: &str) -> AppResult<()> {
-    let referenced: Vec<String> = MEDIA_REF
+    let referenced: BTreeSet<String> = MEDIA_REF
         .captures_iter(body)
         .map(|c| c[1].to_lowercase())
         .collect();
 
-    sqlx::query("UPDATE media SET entry_id = NULL WHERE entry_id = ?1")
+    // One transaction, so an entry is never momentarily attached to nothing —
+    // which would blank its images for anyone reading its share link.
+    let mut tx = db.begin().await?;
+
+    sqlx::query("DELETE FROM entry_media WHERE entry_id = ?1")
         .bind(entry_id)
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
 
-    for id in referenced {
-        sqlx::query("UPDATE media SET entry_id = ?1 WHERE id = ?2")
-            .bind(entry_id)
-            .bind(id)
-            .execute(db)
-            .await?;
+    for id in &referenced {
+        // Selecting from `media` rather than binding the id directly means a
+        // body that still mentions a since-deleted file saves fine.
+        sqlx::query(
+            "INSERT OR IGNORE INTO entry_media (entry_id, media_id)
+             SELECT ?1, id FROM media WHERE id = ?2",
+        )
+        .bind(entry_id)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
     }
+
+    tx.commit().await?;
     Ok(())
+}
+
+/// The files this entry embeds that no other entry does — the ones that become
+/// unreachable once it is gone.
+pub async fn exclusive_media(db: &SqlitePool, entry_id: i64) -> AppResult<Vec<String>> {
+    let rows = sqlx::query(
+        "SELECT em.media_id AS id
+         FROM entry_media em
+         WHERE em.entry_id = ?1
+           AND NOT EXISTS (
+               SELECT 1 FROM entry_media other
+               WHERE other.media_id = em.media_id AND other.entry_id <> ?1
+           )",
+    )
+    .bind(entry_id)
+    .fetch_all(db)
+    .await?;
+
+    Ok(rows.iter().map(|row| row.get("id")).collect())
 }
 
 fn urlencode(value: &str) -> String {
