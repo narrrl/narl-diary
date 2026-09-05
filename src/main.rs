@@ -10,7 +10,10 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use axum::Router;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use tower_http::{compression::CompressionLayer, trace::TraceLayer};
+use axum::http::{header, HeaderValue};
+use tower_http::{
+    compression::CompressionLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer,
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{config::Config, state::AppState};
@@ -66,6 +69,7 @@ async fn main() -> Result<()> {
         .fallback(static_files::handler)
         .layer(axum::extract::DefaultBodyLimit::max(max_upload + 1024 * 1024))
         .layer(CompressionLayer::new())
+        .layer(security_headers())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -79,6 +83,33 @@ async fn main() -> Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
+}
+
+/// Content-Security-Policy for the app shell. `unsafe-inline` is granted to
+/// styles only, because CodeMirror injects its theme as a <style> element at
+/// runtime; scripts stay confined to the bundled files.
+const CSP: &str = "default-src 'self'; img-src 'self' data:; media-src 'self'; \
+    style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; \
+    object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+type HeaderLayer = SetResponseHeaderLayer<HeaderValue>;
+
+/// Headers every response carries. `if_not_present` throughout, so a handler
+/// that has already said something stricter about itself — the media routes and
+/// their sandbox CSP — keeps its own answer.
+fn security_headers() -> (HeaderLayer, HeaderLayer, HeaderLayer, HeaderLayer) {
+    let header = |name: header::HeaderName, value: &'static str| {
+        SetResponseHeaderLayer::if_not_present(name, HeaderValue::from_static(value))
+    };
+
+    (
+        // A share token lives in the URL path, so an outbound link from a shared
+        // entry would otherwise hand the whole private link to a third party.
+        header(header::REFERRER_POLICY, "no-referrer"),
+        header(header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        header(header::X_FRAME_OPTIONS, "DENY"),
+        header(header::CONTENT_SECURITY_POLICY, CSP),
+    )
 }
 
 async fn shutdown_signal() {
