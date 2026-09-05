@@ -34,11 +34,35 @@
     { tag: tags.processingInstruction, color: 'var(--fg-faint)' },
   ])
 
-  const editorTheme = EditorView.theme({
-    '&': { color: 'var(--fg)', backgroundColor: 'transparent', height: '100%' },
-    '.cm-content': { padding: '12px 16px', maxWidth: '90ch' },
-    '.cm-line': { padding: '0' },
-  })
+  /*
+   * CodeMirror's base theme paints panels and the caret for a light editor
+   * (`&light .cm-panels { color: black }`), and those selectors outrank
+   * anything the app stylesheet can say. Theme rules do win, so the parts that
+   * would otherwise render black on black live here rather than in app.css.
+   * `dark: true` also stops the light defaults applying in the first place.
+   */
+  const editorTheme = EditorView.theme(
+    {
+      '&': { color: 'var(--fg)', backgroundColor: 'transparent', height: '100%' },
+      '.cm-content': { padding: '12px 16px', maxWidth: '90ch' },
+      '.cm-line': { padding: '0' },
+      '.cm-cursor, .cm-dropCursor': { borderLeft: '2px solid var(--accent)' },
+      '.cm-panels': {
+        backgroundColor: 'var(--bg-alt)',
+        color: 'var(--fg)',
+        borderColor: 'var(--line)',
+      },
+      '.cm-panels-bottom': { borderTop: '1px solid var(--line)' },
+      // The `:` prompt is a bare text node in the panel; the input follows it.
+      '.cm-vim-panel': { padding: '2px 8px', color: 'var(--accent)' },
+      '.cm-vim-panel input': {
+        fontFamily: 'inherit',
+        color: 'var(--accent)',
+        caretColor: 'var(--accent)',
+      },
+    },
+    { dark: true },
+  )
 
   /** Route every `:command` typed inside the editor through the shared handler. */
   function bridgeExCommands() {

@@ -232,6 +232,4 @@ input::placeholder { color: var(--fg-faint); }
   outline: 1px solid var(--accent-dim) !important;
   color: transparent !important;
 }
-.cm-panels { background: var(--bg-alt); color: var(--fg); border-color: var(--line); }
-.cm-vim-panel { padding: 2px 8px; background: var(--bg-alt); }
-.cm-vim-panel input { background: transparent; border: 0; color: var(--accent); }
+/* The panel and vim `:` prompt are themed in Editor.svelte — see the note there. */
