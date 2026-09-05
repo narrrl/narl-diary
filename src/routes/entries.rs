@@ -188,6 +188,7 @@ pub async fn create(
     .get("id");
 
     media::link_to_entry(&state.db, id, &input.body).await?;
+    state.backup.signal();
     load(&state, id).await.map(Json)
 }
 
@@ -216,6 +217,7 @@ pub async fn update(
     }
 
     media::link_to_entry(&state.db, id, &input.body).await?;
+    state.backup.signal();
     load(&state, id).await.map(Json)
 }
 
@@ -242,6 +244,7 @@ pub async fn remove(
         media::delete_media(&state, &media_id).await?;
     }
 
+    state.backup.signal();
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 

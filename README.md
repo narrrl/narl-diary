@@ -7,6 +7,7 @@ file, one binary.
 - Markdown entries with full-text search (SQLite FTS5).
 - Drag, drop or paste images, video and audio straight into an entry.
 - Share any entry behind an unguessable link — revocable at any time.
+- Backs itself up to Proton Drive, end-to-end encrypted, as a registered device.
 - Real vim keybindings on the desktop (CodeMirror 6 + vim mode), plain taps on
   mobile.
 - The whole frontend is embedded in the release binary, so deploying is copying
@@ -25,7 +26,7 @@ Then open <http://127.0.0.1:4242>.
 `DIARY_SECRET` signs the session cookie; generate one with
 `openssl rand -base64 32`. Changing it logs every device out. The database and
 uploads live under `DIARY_DATA_DIR` (`./data` by default) — that directory is
-the entire backup.
+the entire backup, and it is exactly what the Proton Drive mirror copies.
 
 ### Development
 
@@ -59,7 +60,8 @@ The desktop UI is modal. In the browse pane:
 Inside the editor the full vim keymap is live — `w`/`b`, `dd`, `ciw`, visual
 mode, macros, `:w` to write. `:help` lists every ex command; the useful ones are
 `:w`, `:wq`, `:q!`, `:new [yyyy-mm-dd]`, `:date`, `:title`, `:share`, `:link`,
-`:upload`, `:media`, `:search`, `:set theme=mocha|green|amber|ice` and `:set novim`.
+`:upload`, `:media`, `:search`, `:backup`, `:set theme=mocha|green|amber|ice` and
+`:set novim`.
 
 On a touch device modal editing is turned off and the same actions are buttons.
 
@@ -74,6 +76,69 @@ and says so — `:e!` throws it away, the way vim handles a swap file.
 diary as a zip: one markdown file per entry named by its day, every embedded
 file under its real name, and relative links between the two, so the archive
 reads in any markdown viewer without this application.
+
+## Backing up to Proton Drive
+
+The server can mirror itself into Proton Drive, where it appears as a device —
+its own sync root, alongside the desktop clients — rather than as a folder
+dropped in *My Files*. Everything is encrypted client-side before it leaves the
+machine, by the same Rust SDK the Linux client uses, so Proton stores a diary it
+cannot read.
+
+It is a third-party client: it identifies itself to Proton as
+`external-drive-narl_diary@<version>-alpha` and says so before it asks for
+account details. It carries no Proton branding and is not supported by Proton.
+
+Set it up once, interactively, because SRP and 2FA need a human:
+
+```sh
+narl-diary proton-login                       # or, in Docker:
+docker compose exec -it diary narl-diary proton-login
+```
+
+That stores a session — tokens, the mailbox password needed to rebuild the key
+chain, and the account key salts — as a `0600` file next to the database. It
+sits on the same volume as the diary it protects, and it is enough to read the
+account, so the volume is the thing to keep private. Built with
+`--features keyring` on a host that has a Secret Service, the session goes to
+the OS keyring instead and the file is only a fallback; the container has no
+session bus, so there it is always the file.
+
+Afterwards the server resumes on its own and nothing prompts again. Refresh
+tokens are single-use, so every rotation is written back immediately — which is
+also why two servers must not share one session file.
+
+The mirror is one-way and change-driven: a write marks the diary dirty, and once
+it has been quiet for `DIARY_BACKUP_DEBOUNCE_SEC` the mirror runs, with
+`DIARY_BACKUP_INTERVAL_MIN` as a backstop. An hour of writing is one backup, not
+sixty. The device folder ends up as a copy of the data directory:
+
+```text
+narl-diary/
+  RESTORE.txt        what this is, and how to put it back
+  diary.db           a VACUUM INTO snapshot — consistent, no write-ahead log
+  uploads/<uuid>     every uploaded file, under the name the database knows
+```
+
+`diary.db` becomes a new revision each time, so Proton Drive keeps the older
+ones and a mistake that was mirrored can still be undone. Uploads are written
+once and never rewritten. Restoring is copying both back into an empty data
+directory — no tool in between, which is the point.
+
+| command | what it does |
+| --- | --- |
+| `narl-diary proton-login` | log in and enable backups |
+| `narl-diary proton-status` | account, device, schedule, how much is mirrored |
+| `narl-diary backup-now` | mirror once and exit — for cron, or for nerves |
+| `narl-diary proton-logout` | forget the session; the mirror stays where it is |
+
+From inside the diary, `:backup` says when the last one finished and `:backup!`
+runs one now. A failed backup is loud: it is reported by `:backup`, and the next
+tick retries it.
+
+Deleting an entry does not delete it from the mirror unless `DIARY_BACKUP_PRUNE`
+is on. A backup that forgets on command is one accident away from being no
+backup at all.
 
 ## Sharing
 
@@ -94,6 +159,7 @@ Everything except the two share routes requires the session cookie.
 | `GET`/`POST` | `/api/entries` | list (`?q=` searches) / create |
 | `GET`/`PUT`/`DELETE` | `/api/entries/{id}` | read / update / delete |
 | `GET` | `/api/export` | every entry and file, as a zip |
+| `GET`/`POST` | `/api/backup` | Proton Drive mirror: status / run now |
 | `POST`/`DELETE` | `/api/entries/{id}/share` | mint / revoke a share token |
 | `GET`/`POST` | `/api/media` | list / upload (multipart) |
 | `GET`/`DELETE` | `/api/media/{id}` | serve / delete a file |

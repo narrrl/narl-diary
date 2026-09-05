@@ -98,7 +98,7 @@ impl FromRequestParts<AppState> for Session {
 #[cfg(test)]
 mod tests {
     use super::{credentials_match, issue_token, verify_token};
-    use crate::config::Config;
+    use crate::config::{BackupConfig, Config};
 
     fn config(session_days: i64) -> Config {
         Config {
@@ -110,6 +110,12 @@ mod tests {
             session_days,
             max_upload_bytes: 1,
             secure_cookie: false,
+            backup: BackupConfig {
+                device_name: "narl-diary".into(),
+                interval: None,
+                debounce: std::time::Duration::from_secs(0),
+                prune: false,
+            },
         }
     }
 

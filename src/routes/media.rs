@@ -157,6 +157,7 @@ pub async fn upload(
     if uploaded.is_empty() {
         return Err(AppError::BadRequest("no files in upload".into()));
     }
+    state.backup.signal();
     Ok(Json(uploaded))
 }
 
@@ -186,6 +187,7 @@ pub async fn remove(
     Path(id): Path<String>,
 ) -> AppResult<Json<serde_json::Value>> {
     delete_media(&state, &id).await?;
+    state.backup.signal();
     Ok(Json(serde_json::json!({ "ok": true })))
 }
 

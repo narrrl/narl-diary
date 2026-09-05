@@ -1,3 +1,4 @@
+import { api, type BackupStatus } from './api'
 import { diary, type Theme } from './store.svelte'
 import { formatDay, parseDay } from './util'
 
@@ -48,6 +49,28 @@ const setTheme = (name: string) => {
   }
   diary.setTheme(name as Theme)
   diary.say(`theme ${name}`)
+}
+
+/** `3 minutes ago`, or `never`. Backups are read at a glance, not to the second. */
+const ago = (at: number | null) => {
+  if (!at) return 'never'
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000) - at)
+  if (seconds < 90) return `${seconds}s ago`
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m ago`
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h ago`
+  return `${Math.round(seconds / 86400)}d ago`
+}
+
+const describeBackup = (status: BackupStatus) => {
+  if (!status.configured) {
+    return diary.say('proton drive backups are off — run `narl-diary proton-login` on the server', 'error')
+  }
+  if (status.last_error) {
+    return diary.say(`backup failed: ${status.last_error}`, 'error')
+  }
+  const where = status.device ? `${status.device} · ` : ''
+  const state = status.running ? 'running now' : status.pending ? 'changes waiting' : 'up to date'
+  diary.say(`${where}${state} · last ${ago(status.last_success_at)}`)
 }
 
 /** A filename that survives a download folder: `2026-09-05-first-light.md`. */
@@ -399,6 +422,31 @@ export const commands: CommandSpec[] = [
       const theme = /^theme=(\w+)$/.exec(option)?.[1]
       if (theme) return setTheme(theme)
       diary.say(`unknown option: ${option}`, 'error')
+    },
+  },
+  {
+    name: 'backup',
+    group: 'view',
+    help: 'when the diary was last mirrored to proton drive',
+    run: () => diary.guard(async () => describeBackup(await api.backupStatus())),
+    bang: {
+      help: 'back up to proton drive now, rather than when the diary falls quiet',
+      run: () =>
+        diary.guard(async () => {
+          // Whatever is in the editor belongs in the backup that was just
+          // asked for, so it goes to the server before the mirror runs.
+          await diary.flush()
+          diary.say('backing up …')
+          const status = await api.backupNow()
+          if (status.last_error) return diary.say(`backup failed: ${status.last_error}`, 'error')
+          const last = status.last
+          diary.say(
+            last
+              ? `backed up · ${last.uploaded} file${last.uploaded === 1 ? '' : 's'} uploaded, ${last.skipped} unchanged`
+              : 'proton drive backups are off — run `narl-diary proton-login` on the server',
+            last ? 'info' : 'error',
+          )
+        }),
     },
   },
   {

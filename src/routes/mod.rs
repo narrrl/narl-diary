@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod entries;
 pub mod export;
 pub mod media;
@@ -18,6 +19,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/logout", post(session::logout))
         .route("/entries", get(entries::list).post(entries::create))
         .route("/export", get(export::export))
+        .route("/backup", get(backup::status).post(backup::run))
         .route("/entries/{id}", get(entries::get))
         .route("/entries/{id}", put(entries::update))
         .route("/entries/{id}", delete(entries::remove))

@@ -1,4 +1,6 @@
 mod auth;
+mod backup;
+mod cli;
 mod config;
 mod error;
 mod routes;
@@ -43,6 +45,54 @@ async fn main() -> Result<()> {
         .await
         .with_context(|| format!("could not create {}", config.uploads_dir().display()))?;
 
+    // Subcommands share the server's configuration and database, and only the
+    // default (no argument) goes on to serve anything.
+    match std::env::args().nth(1).as_deref() {
+        None => {}
+        Some("proton-login") => return cli::proton_login(&config).await,
+        Some("proton-logout") => return cli::proton_logout(&config),
+        Some("proton-status") => {
+            let db = open_db(&config).await?;
+            return cli::proton_status(&db, &config).await;
+        }
+        Some("backup-now") => {
+            let db = open_db(&config).await?;
+            let summary = backup::run_once(db, Arc::new(config)).await?;
+            println!(
+                "Mirrored {} files ({} bytes), skipped {}.",
+                summary.uploaded, summary.bytes, summary.skipped
+            );
+            return Ok(());
+        }
+        Some("help" | "--help" | "-h") => {
+            print!("{}", cli::USAGE);
+            return Ok(());
+        }
+        Some(other) => {
+            anyhow::bail!("unknown command {other:?}\n\n{}", cli::USAGE);
+        }
+    }
+
+    let db = open_db(&config).await?;
+
+    let bind = config.bind;
+    let max_upload = config.max_upload_bytes;
+    let config = Arc::new(config);
+    let backup = backup::Backup::new(db.clone(), Arc::clone(&config));
+    backup::spawn(Arc::clone(&backup));
+
+    let state = AppState {
+        db,
+        config,
+        login_throttle: Arc::default(),
+        backup,
+    };
+    serve(bind, max_upload, state).await
+}
+
+/// Open the diary database and bring it up to date. Both the server and the
+/// subcommands need it, and both need the same pragmas.
+async fn open_db(config: &Config) -> Result<sqlx::SqlitePool> {
     let db = SqlitePoolOptions::new()
         .max_connections(8)
         .connect_with(
@@ -65,14 +115,10 @@ async fn main() -> Result<()> {
         .await
         .context("could not apply database migrations")?;
 
-    let bind = config.bind;
-    let max_upload = config.max_upload_bytes;
-    let state = AppState {
-        db,
-        config: Arc::new(config),
-        login_throttle: Arc::default(),
-    };
+    Ok(db)
+}
 
+async fn serve(bind: std::net::SocketAddr, max_upload: usize, state: AppState) -> Result<()> {
     let app = Router::new()
         .nest("/api", routes::api_router())
         .fallback(static_files::handler)

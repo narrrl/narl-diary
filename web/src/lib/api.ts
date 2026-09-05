@@ -38,6 +38,18 @@ export interface MediaFile {
   entry_ids: number[]
 }
 
+/** The Proton Drive mirror, as `/api/backup` reports it. */
+export interface BackupStatus {
+  configured: boolean
+  device: string | null
+  running: boolean
+  pending: boolean
+  last_run_at: number | null
+  last_success_at: number | null
+  last_error: string | null
+  last: { uploaded: number; skipped: number; pruned: number; bytes: number } | null
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -106,6 +118,10 @@ export const api = {
   },
 
   deleteMedia: (id: string) => request<{ ok: true }>(`/media/${id}`, { method: 'DELETE' }),
+
+  backupStatus: () => request<BackupStatus>('/backup'),
+
+  backupNow: () => request<BackupStatus>('/backup', { method: 'POST' }),
 
   readShared: (token: string) => request<SharedEntry>(`/share/${encodeURIComponent(token)}`),
 }

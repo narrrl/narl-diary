@@ -56,6 +56,7 @@ pub async fn enable(
         }
     };
 
+    state.backup.signal();
     Ok(Json(json!({ "token": token, "path": format!("/s/{token}") })))
 }
 
@@ -72,6 +73,7 @@ pub async fn disable(
     if affected == 0 {
         return Err(AppError::NotFound);
     }
+    state.backup.signal();
     Ok(Json(json!({ "ok": true })))
 }
 
