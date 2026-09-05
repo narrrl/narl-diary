@@ -55,17 +55,24 @@ pub struct EntryInput {
     pub created_at: Option<i64>,
 }
 
-/// A short, plain-ish preview of the body for the entry list.
-fn excerpt(body: &str) -> String {
-    let flat: String = body
+/// How much of a body the list query reads. Comfortably more than an excerpt
+/// needs, and a rounding error next to entries that run to thousands of words.
+const HEAD_CHARS: usize = 1024;
+const EXCERPT_CHARS: usize = 180;
+
+/// A short, plain-ish preview of the body for the entry list. `head` is only
+/// the leading `HEAD_CHARS` of the entry, so truncation is inferred from its
+/// length rather than measured against the whole body.
+fn excerpt(head: &str) -> String {
+    let flat: String = head
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with("![") && !line.starts_with("```"))
         .map(|line| line.trim_start_matches(['#', '>', '-', '*', ' ']))
         .collect::<Vec<_>>()
         .join(" ");
-    let mut out: String = flat.chars().take(180).collect();
-    if flat.chars().count() > 180 {
+    let mut out: String = flat.chars().take(EXCERPT_CHARS).collect();
+    if flat.chars().count() > EXCERPT_CHARS || head.chars().count() >= HEAD_CHARS {
         out.push('…');
     }
     out
@@ -99,14 +106,15 @@ pub async fn list(
 
     let rows = match search.and_then(fts_query) {
         Some(query) => {
-            sqlx::query(
-                "SELECT e.id, e.title, e.body, e.created_at, e.updated_at, e.share_token
+            sqlx::query(&format!(
+                "SELECT e.id, e.title, substr(e.body, 1, {HEAD_CHARS}) AS body,
+                        e.created_at, e.updated_at, e.share_token
                  FROM entries_fts
                  JOIN entries e ON e.id = entries_fts.rowid
                  WHERE entries_fts MATCH ?1
                  ORDER BY rank
-                 LIMIT ?2 OFFSET ?3",
-            )
+                 LIMIT ?2 OFFSET ?3"
+            ))
             .bind(query)
             .bind(limit)
             .bind(offset)
@@ -114,12 +122,13 @@ pub async fn list(
             .await?
         }
         None => {
-            sqlx::query(
-                "SELECT id, title, body, created_at, updated_at, share_token
+            sqlx::query(&format!(
+                "SELECT id, title, substr(body, 1, {HEAD_CHARS}) AS body,
+                        created_at, updated_at, share_token
                  FROM entries
                  ORDER BY created_at DESC, id DESC
-                 LIMIT ?1 OFFSET ?2",
-            )
+                 LIMIT ?1 OFFSET ?2"
+            ))
             .bind(limit)
             .bind(offset)
             .fetch_all(&state.db)
@@ -130,12 +139,12 @@ pub async fn list(
     let entries = rows
         .into_iter()
         .map(|row| {
-            let body: String = row.get("body");
+            let head: String = row.get("body");
             let share_token: Option<String> = row.get("share_token");
             EntrySummary {
                 id: row.get("id"),
                 title: row.get("title"),
-                excerpt: excerpt(&body),
+                excerpt: excerpt(&head),
                 created_at: row.get("created_at"),
                 updated_at: row.get("updated_at"),
                 shared: share_token.is_some(),
@@ -252,4 +261,39 @@ async fn load(state: &AppState, id: i64) -> AppResult<Entry> {
         shared: share_token.is_some(),
         share_token,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{excerpt, fts_query, EXCERPT_CHARS, HEAD_CHARS};
+
+    #[test]
+    fn strips_markdown_furniture() {
+        let body = "# Title\n\n![pic](/api/media/x)\n\n> a quote\n- a point";
+        assert_eq!(excerpt(body), "Title a quote a point");
+    }
+
+    #[test]
+    fn marks_a_body_that_was_cut_short() {
+        assert!(!excerpt("short").ends_with('…'));
+        assert!(excerpt(&"word ".repeat(60)).ends_with('…'));
+        // A head at the read limit is truncated even when it flattens small.
+        assert!(excerpt(&"![x](/api/media/y)\n".repeat(HEAD_CHARS / 18)).ends_with('…'));
+    }
+
+    #[test]
+    fn excerpt_never_exceeds_its_budget() {
+        let out = excerpt(&"a".repeat(HEAD_CHARS));
+        assert_eq!(out.chars().count(), EXCERPT_CHARS + 1);
+    }
+
+    #[test]
+    fn fts_query_discards_operators() {
+        // Anything that could be read as FTS syntax must not survive as syntax.
+        assert_eq!(fts_query("hello"), Some("\"hello\"*".into()));
+        assert_eq!(fts_query("a OR b"), Some("\"a\"* AND \"OR\"* AND \"b\"*".into()));
+        assert_eq!(fts_query("foo\"NEAR/2\"bar"), Some("\"foo\"* AND \"NEAR\"* AND \"2\"* AND \"bar\"*".into()));
+        assert_eq!(fts_query("  "), None);
+        assert_eq!(fts_query("***"), None);
+    }
 }

@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use axum::Router;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous,
+};
 use axum::http::{header, HeaderValue};
 use tower_http::{
     compression::CompressionLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer,
@@ -47,6 +49,11 @@ async fn main() -> Result<()> {
                 .filename(config.data_dir.join("diary.db"))
                 .create_if_missing(true)
                 .journal_mode(SqliteJournalMode::Wal)
+                // The standard pairing for WAL: fsync at checkpoints rather
+                // than on every commit. A crash can cost the last transaction,
+                // never the database.
+                .synchronous(SqliteSynchronous::Normal)
+                .busy_timeout(std::time::Duration::from_secs(10))
                 .foreign_keys(true),
         )
         .await
