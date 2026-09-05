@@ -94,3 +94,77 @@ impl FromRequestParts<AppState> for Session {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{credentials_match, issue_token, verify_token};
+    use crate::config::Config;
+
+    fn config(session_days: i64) -> Config {
+        Config {
+            username: "narl".into(),
+            password: "hunter2".into(),
+            secret: b"a-secret-of-at-least-16-bytes".to_vec(),
+            bind: "127.0.0.1:0".parse().unwrap(),
+            data_dir: ".".into(),
+            session_days,
+            max_upload_bytes: 1,
+            secure_cookie: false,
+        }
+    }
+
+    #[test]
+    fn a_fresh_token_verifies() {
+        let config = config(30);
+        assert!(verify_token(&config, &issue_token(&config)));
+    }
+
+    #[test]
+    fn an_expired_token_does_not() {
+        let config = config(-1);
+        assert!(!verify_token(&config, &issue_token(&config)));
+    }
+
+    #[test]
+    fn rotating_the_secret_invalidates_every_session() {
+        let token = issue_token(&config(30));
+        let mut rotated = config(30);
+        rotated.secret = b"a-different-secret-entirely".to_vec();
+        assert!(!verify_token(&rotated, &token));
+    }
+
+    #[test]
+    fn a_tampered_token_does_not_verify() {
+        let config = config(30);
+        let token = issue_token(&config);
+        let (payload, signature) = token.split_once('.').unwrap();
+
+        // A far-future expiry the holder signed themselves.
+        let forged = base64::Engine::encode(&super::B64, "99999999999");
+        assert!(!verify_token(&config, &format!("{forged}.{signature}")));
+
+        // The real expiry with the last byte of the signature flipped.
+        let mut bytes = signature.as_bytes().to_vec();
+        bytes[0] = if bytes[0] == b'A' { b'B' } else { b'A' };
+        let flipped = String::from_utf8(bytes).unwrap();
+        assert!(!verify_token(&config, &format!("{payload}.{flipped}")));
+    }
+
+    #[test]
+    fn malformed_tokens_are_rejected_rather_than_panicking() {
+        let config = config(30);
+        for token in ["", ".", "no-dot", "!!!.!!!", "a.b.c", &".".repeat(100)] {
+            assert!(!verify_token(&config, token), "{token:?}");
+        }
+    }
+
+    #[test]
+    fn credentials_must_match_exactly() {
+        let config = config(30);
+        assert!(credentials_match(&config, "narl", "hunter2"));
+        assert!(!credentials_match(&config, "narl", "hunter"));
+        assert!(!credentials_match(&config, "narl", "hunter22"));
+        assert!(!credentials_match(&config, "nar", "hunter2"));
+        assert!(!credentials_match(&config, "", ""));
+    }
+}

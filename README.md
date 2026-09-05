@@ -63,6 +63,18 @@ mode, macros, `:w` to write. `:help` lists every ex command; the useful ones are
 
 On a touch device modal editing is turned off and the same actions are buttons.
 
+## Not losing things
+
+Every change is written to `localStorage` as it is typed and to the server a
+couple of seconds after typing stops, so `:w` is a habit rather than a
+necessity. If a tab dies mid-entry, opening that entry again restores the draft
+and says so — `:e!` throws it away, the way vim handles a swap file.
+
+`:export` downloads the open entry as markdown. `:export!` downloads the whole
+diary as a zip: one markdown file per entry named by its day, every embedded
+file under its real name, and relative links between the two, so the archive
+reads in any markdown viewer without this application.
+
 ## Sharing
 
 `:share` mints a 192-bit random token and copies `https://your-host/s/<token>`.
@@ -81,6 +93,7 @@ Everything except the two share routes requires the session cookie.
 | `GET` | `/api/me` | current user |
 | `GET`/`POST` | `/api/entries` | list (`?q=` searches) / create |
 | `GET`/`PUT`/`DELETE` | `/api/entries/{id}` | read / update / delete |
+| `GET` | `/api/export` | every entry and file, as a zip |
 | `POST`/`DELETE` | `/api/entries/{id}/share` | mint / revoke a share token |
 | `GET`/`POST` | `/api/media` | list / upload (multipart) |
 | `GET`/`DELETE` | `/api/media/{id}` | serve / delete a file |
@@ -92,6 +105,13 @@ Everything except the two share routes requires the session cookie.
 Put a TLS-terminating reverse proxy in front of it, point it at `DIARY_BIND`,
 and set `DIARY_SECURE_COOKIE=1`. Nothing else is needed: no database server, no
 runtime dependencies, no build tools on the host.
+
+The app sends its own `Content-Security-Policy`, `Referrer-Policy: no-referrer`,
+`X-Content-Type-Options` and `X-Frame-Options`; a proxy that adds its own should
+not weaken them. `no-referrer` matters in particular, because a share token
+lives in the URL and would otherwise leak to any site a shared entry links to.
+Uploaded files are only ever served as types that cannot execute — anything else
+is handed back as an opaque download.
 
 ### Docker
 
