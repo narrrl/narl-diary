@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ApiError } from './api'
   import { diary } from './store.svelte'
 
   let username = $state('')
@@ -18,7 +19,14 @@
     try {
       await diary.login(username, password)
     } catch (e) {
-      error = e instanceof Error ? e.message : 'login failed'
+      // The server answers a wrong password with a bare 401; the throttle's
+      // "wait Ns" message is worth showing verbatim.
+      error =
+        e instanceof ApiError && e.status === 401
+          ? 'invalid credentials'
+          : e instanceof Error
+            ? e.message
+            : 'login failed'
       password = ''
     } finally {
       busy = false

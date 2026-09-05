@@ -10,6 +10,8 @@ pub enum AppError {
     Unauthorized,
     NotFound,
     BadRequest(String),
+    /// The caller must wait this many seconds before trying again.
+    TooManyRequests(i64),
     Internal(anyhow::Error),
 }
 
@@ -21,6 +23,10 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_string()),
             AppError::NotFound => (StatusCode::NOT_FOUND, "not found".to_string()),
             AppError::BadRequest(m) => (StatusCode::BAD_REQUEST, m),
+            AppError::TooManyRequests(wait) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                format!("too many attempts — wait {wait}s"),
+            ),
             AppError::Internal(e) => {
                 tracing::error!("internal error: {e:#}");
                 (

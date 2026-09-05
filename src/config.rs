@@ -32,6 +32,13 @@ impl Config {
             anyhow::bail!("DIARY_SECRET must be at least 16 characters");
         }
 
+        if password == "change-me" {
+            tracing::warn!(
+                "DIARY_PASSWORD is still the example value from .env.example — \
+                 anyone who can reach this server can read the diary"
+            );
+        }
+
         let bind = var("DIARY_BIND")
             .unwrap_or_else(|| "127.0.0.1:4242".to_string())
             .parse()

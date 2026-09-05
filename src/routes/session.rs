@@ -23,9 +23,17 @@ pub async fn login(
     State(state): State<AppState>,
     Json(body): Json<LoginRequest>,
 ) -> AppResult<impl IntoResponse> {
+    state.login_throttle.check().map_err(|wait| {
+        tracing::warn!("login refused, {wait}s of backoff remaining");
+        AppError::TooManyRequests(wait)
+    })?;
+
     if !auth::credentials_match(&state.config, &body.username, &body.password) {
-        return Err(AppError::BadRequest("invalid credentials".into()));
+        state.login_throttle.record_failure();
+        return Err(AppError::Unauthorized);
     }
+
+    state.login_throttle.record_success();
     let token = auth::issue_token(&state.config);
     Ok((
         StatusCode::OK,

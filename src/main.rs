@@ -4,6 +4,7 @@ mod error;
 mod routes;
 mod state;
 mod static_files;
+mod throttle;
 
 use std::sync::Arc;
 
@@ -69,6 +70,7 @@ async fn main() -> Result<()> {
     let state = AppState {
         db,
         config: Arc::new(config),
+        login_throttle: Arc::default(),
     };
 
     let app = Router::new()
