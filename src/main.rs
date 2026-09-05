@@ -40,6 +40,16 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Asked before anything is loaded: `--help` must answer on a host that has
+    // not been configured yet, which is exactly where it gets asked.
+    if matches!(
+        std::env::args().nth(1).as_deref(),
+        Some("help" | "--help" | "-h")
+    ) {
+        print!("{}", cli::USAGE);
+        return Ok(());
+    }
+
     let config = Config::from_env()?;
     tokio::fs::create_dir_all(config.uploads_dir())
         .await
@@ -62,10 +72,6 @@ async fn main() -> Result<()> {
                 "Mirrored {} files ({} bytes), skipped {}.",
                 summary.uploaded, summary.bytes, summary.skipped
             );
-            return Ok(());
-        }
-        Some("help" | "--help" | "-h") => {
-            print!("{}", cli::USAGE);
             return Ok(());
         }
         Some(other) => {

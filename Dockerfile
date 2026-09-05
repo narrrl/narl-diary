@@ -21,9 +21,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked \
  && cp target/release/narl-diary /usr/local/bin/narl-diary
 
-# 3. Runtime. SQLite is compiled into the binary, so nothing else is needed.
+# 3. Runtime. SQLite is compiled into the binary; the only thing the image has
+#    to supply is a trust store. The Proton Drive client verifies TLS against
+#    the system CAs, and debian-slim ships none — without this, every request
+#    to Proton fails with "No CA certificates were loaded from the system".
 FROM debian:trixie-slim
-RUN useradd --system --uid 10001 --create-home --home-dir /home/diary diary \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --create-home --home-dir /home/diary diary \
  && mkdir -p /data \
  && chown diary:diary /data
 COPY --from=build /usr/local/bin/narl-diary /usr/local/bin/narl-diary
