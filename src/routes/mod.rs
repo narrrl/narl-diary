@@ -1,4 +1,5 @@
 pub mod entries;
+pub mod export;
 pub mod media;
 pub mod session;
 pub mod share;
@@ -16,6 +17,7 @@ pub fn api_router() -> Router<AppState> {
         .route("/login", post(session::login))
         .route("/logout", post(session::logout))
         .route("/entries", get(entries::list).post(entries::create))
+        .route("/export", get(export::export))
         .route("/entries/{id}", get(entries::get))
         .route("/entries/{id}", put(entries::update))
         .route("/entries/{id}", delete(entries::remove))

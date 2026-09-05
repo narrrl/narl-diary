@@ -312,6 +312,16 @@ export const commands: CommandSpec[] = [
       URL.revokeObjectURL(url)
       diary.say(`wrote ${anchor.download}`)
     },
+    bang: {
+      help: 'download the whole diary — every entry and every file — as a zip',
+      run: async () => {
+        // A plain navigation, so the browser streams the archive straight to
+        // disk instead of the tab holding all of it in memory first.
+        await diary.flush()
+        diary.say('building the archive — the download starts on its own')
+        location.href = '/api/export'
+      },
+    },
   },
   {
     name: 'upload',
