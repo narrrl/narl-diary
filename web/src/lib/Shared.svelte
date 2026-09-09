@@ -3,14 +3,18 @@
   import { renderMarkdown } from './markdown'
   import { formatStamp, formatWeekday } from './util'
 
-  const { token }: { token: string } = $props()
+  const { token, shareKey }: { token: string; shareKey: string } = $props()
 
   let entry = $state<SharedEntry | null>(null)
   let error = $state('')
 
   $effect(() => {
+    if (!shareKey) {
+      error = 'this link is incomplete — the part after # is missing from it.'
+      return
+    }
     api
-      .readShared(token)
+      .readShared(token, shareKey)
       .then((data) => {
         entry = data
         document.title = data.title.trim() || `~/diary ${formatStamp(data.created_at)}`
@@ -30,7 +34,7 @@
       </div>
       {#if entry.title.trim()}<h1>{entry.title}</h1>{/if}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised in renderMarkdown -->
-      {@html renderMarkdown(entry.body, token)}
+      {@html renderMarkdown(entry.body, { token, key: shareKey })}
     </article>
     <footer class="faint">— written in ~/diary</footer>
   {:else}

@@ -9,7 +9,12 @@
   const words = $derived(
     (diary.editing ? diary.draft.body : entry.body).split(/\s+/).filter(Boolean).length,
   )
-  const shareUrl = $derived(entry.share_token ? `${location.origin}/s/${entry.share_token}` : null)
+  /*
+   * Only the token half of a share link is recoverable — the key lives in the
+   * fragment, and the server kept nothing but its hash — so the bar shows the
+   * link's shape and offers a fresh one rather than a copy of the old.
+   */
+  const sharePath = $derived(entry.share_token ? `${location.origin}/s/${entry.share_token}#…` : null)
 </script>
 
 <section class="pane">
@@ -43,11 +48,11 @@
     </div>
   </header>
 
-  {#if shareUrl}
+  {#if sharePath}
     <div class="sharebar">
       <span class="accent">◉ public</span>
-      <a href={shareUrl} target="_blank" rel="noreferrer">{shareUrl}</a>
-      <button onclick={() => runCommand('link')}>copy</button>
+      <span class="faint">{sharePath}</span>
+      <button onclick={() => runCommand('link')}>new link</button>
     </div>
   {/if}
 

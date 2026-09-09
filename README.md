@@ -51,7 +51,7 @@ The desktop UI is modal. In the browse pane:
 | `i`, `a` | edit the open entry |
 | `Esc`, `h`, `q` | back out to the list |
 | `/` | full-text search (`n` clears it) |
-| `s` / `y` | toggle sharing / copy the share link |
+| `s` / `y` | toggle sharing / mint a new share link |
 | `x`, `dd` | delete the entry |
 | `:` | command line |
 | `Ctrl-S` | save from anywhere |
@@ -143,11 +143,25 @@ backup at all.
 
 ## Sharing
 
-`:share` mints a 192-bit random token and copies `https://your-host/s/<token>`.
-That page needs no session, renders the entry read-only, and serves only the
-media files that entry currently embeds — dropping a picture out of a shared
-entry immediately makes it unreachable through the link. `:unshare` destroys the
-token, and a new `:share` mints a different one.
+`:share` mints two 192-bit random secrets and copies
+`https://your-host/s/<token>#<key>`. That page needs no session, renders the
+entry read-only, and serves only the media files that entry currently embeds —
+dropping a picture out of a shared entry immediately makes it unreachable
+through the link.
+
+The two halves do different jobs. The token names the entry; the key proves the
+reader was given the whole link. A browser never sends a fragment to the server,
+so the key stays on the reader's machine and out of every access log, referrer
+and link preview along the way — a crawler or a chat client that harvested only
+the path holds a URL that answers `404`. The server stores nothing but a
+SHA-256 of the key and compares in constant time, and a wrong key is answered
+exactly like an unknown token, so guessing never confirms that a token is live.
+
+Because only the hash is kept, a link exists in full exactly once: in the moment
+`:share` copies it. It cannot be re-read from the entry afterwards. `:link`
+mints a fresh key for the same token — which retires the previous link, making
+it the way to cut off a reader without unpublishing — and `:unshare` destroys
+both halves.
 
 ## API
 
@@ -161,11 +175,11 @@ Everything except the two share routes requires the session cookie.
 | `GET`/`PUT`/`DELETE` | `/api/entries/{id}` | read / update / delete |
 | `GET` | `/api/export` | every entry and file, as a zip |
 | `GET`/`POST` | `/api/backup` | Proton Drive mirror: status / run now |
-| `POST`/`DELETE` | `/api/entries/{id}/share` | mint / revoke a share token |
+| `POST`/`DELETE` | `/api/entries/{id}/share` | mint or rotate / revoke a share link |
 | `GET`/`POST` | `/api/media` | list / upload (multipart) |
 | `GET`/`DELETE` | `/api/media/{id}` | serve / delete a file |
-| `GET` | `/api/share/{token}` | public: read a shared entry |
-| `GET` | `/api/share/{token}/media/{id}` | public: media inside a shared entry |
+| `GET` | `/api/share/{token}/{key}` | public: read a shared entry |
+| `GET` | `/api/share/{token}/{key}/media/{id}` | public: media inside a shared entry |
 
 ## Deploying
 
@@ -177,6 +191,8 @@ The app sends its own `Content-Security-Policy`, `Referrer-Policy: no-referrer`,
 `X-Content-Type-Options` and `X-Frame-Options`; a proxy that adds its own should
 not weaken them. `no-referrer` matters in particular, because a share token
 lives in the URL and would otherwise leak to any site a shared entry links to.
+Share links minted before the key existed are revoked by migration `0005`;
+re-run `:share` on those entries to publish them again.
 Uploaded files are only ever served as types that cannot execute — anything else
 is handed back as an opaque download.
 

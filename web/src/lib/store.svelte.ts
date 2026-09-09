@@ -257,13 +257,24 @@ class Diary {
       await api.unshare(id)
       this.say(`entry #${id} is private again`)
     } else {
-      const { token } = await api.share(id)
-      const url = `${location.origin}/s/${token}`
-      await this.copy(url)
+      const url = await this.mintShareLink(id)
       this.say(`shared → ${url} (copied)`)
     }
     if (this.open?.id === id) this.open = await api.getEntry(id)
     await this.refresh()
+  }
+
+  /*
+   * The server keeps only a hash of the key that lives in the link's fragment,
+   * so a link exists in full exactly once: here, in the moment it is minted.
+   * There is nothing to re-copy later — asking again mints a new link and
+   * retires the old one.
+   */
+  async mintShareLink(id: number) {
+    const { path } = await api.share(id)
+    const url = `${location.origin}${path}`
+    await this.copy(url)
+    return url
   }
 
   async copy(text: string) {

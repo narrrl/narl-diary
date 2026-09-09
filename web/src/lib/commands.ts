@@ -279,7 +279,7 @@ export const commands: CommandSpec[] = [
       const id = diary.open?.id ?? diary.selected?.id
       if (!id) return diary.say('no entry selected', 'error')
       const entry = diary.open?.id === id ? diary.open : diary.selected
-      if (entry?.shared) return diary.say('already shared — :link to copy, :unshare to revoke')
+      if (entry?.shared) return diary.say('already shared — :link for a new link, :unshare to revoke')
       await diary.guard(() => diary.toggleShare(id))
     },
   },
@@ -298,12 +298,16 @@ export const commands: CommandSpec[] = [
   {
     name: 'link',
     group: 'sharing',
-    help: 'copy the share link of the current entry',
+    help: 'mint a new share link for the entry and copy it',
     run: async () => {
-      const token = diary.open?.share_token ?? diary.selected?.share_token
-      if (!token) return diary.say('entry is not shared — :share first', 'error')
-      const url = `${location.origin}/s/${token}`
-      diary.say((await diary.copy(url)) ? `copied ${url}` : url)
+      const id = diary.open?.id ?? diary.selected?.id
+      if (!id) return diary.say('no entry selected', 'error')
+      const entry = diary.open?.id === id ? diary.open : diary.selected
+      if (!entry?.shared) return diary.say('entry is not shared — :share first', 'error')
+      await diary.guard(async () => {
+        const url = await diary.mintShareLink(id)
+        diary.say(`new link → ${url} (copied) — the previous one is dead`)
+      })
     },
   },
   {

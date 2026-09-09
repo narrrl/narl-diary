@@ -4,13 +4,17 @@ import { marked } from 'marked'
 marked.setOptions({ gfm: true, breaks: true })
 
 /**
- * Render entry markdown to sanitised HTML. When a share token is given, media
- * URLs are rewritten to the public route so the page works for a reader who has
- * no session.
+ * Render entry markdown to sanitised HTML. When share credentials are given,
+ * media URLs are rewritten to the public route — token and key both, since that
+ * route demands the same pair the entry itself did — so the page works for a
+ * reader who has no session.
  */
-export function renderMarkdown(source: string, shareToken?: string): string {
-  const md = shareToken
-    ? source.replaceAll('/api/media/', `/api/share/${encodeURIComponent(shareToken)}/media/`)
+export function renderMarkdown(source: string, share?: { token: string; key: string }): string {
+  const md = share
+    ? source.replaceAll(
+        '/api/media/',
+        `/api/share/${encodeURIComponent(share.token)}/${encodeURIComponent(share.key)}/media/`,
+      )
     : source
 
   const html = marked.parse(md, { async: false }) as string

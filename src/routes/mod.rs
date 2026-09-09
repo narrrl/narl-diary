@@ -27,6 +27,6 @@ pub fn api_router() -> Router<AppState> {
         .route("/entries/{id}/share", delete(share::disable))
         .route("/media", post(media::upload).get(media::list))
         .route("/media/{id}", get(media::serve).delete(media::remove))
-        .route("/share/{token}", get(share::read))
-        .route("/share/{token}/media/{id}", get(share::serve_media))
+        .route("/share/{token}/{key}", get(share::read))
+        .route("/share/{token}/{key}/media/{id}", get(share::serve_media))
 }

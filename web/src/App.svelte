@@ -11,9 +11,14 @@
   import StatusBar from './lib/StatusBar.svelte'
   import { diary } from './lib/store.svelte'
 
+  /*
+   * A share link is /s/<token>#<key>. The fragment never leaves the browser, so
+   * a crawler that only scraped the path cannot ask the server for the entry.
+   */
   const shareToken = location.pathname.startsWith('/s/')
     ? decodeURIComponent(location.pathname.slice(3))
     : null
+  const shareKey = shareToken ? decodeURIComponent(location.hash.slice(1)) : ''
 
   let cmdline = $state<string | null>(null)
   let fileInput = $state<HTMLInputElement>()
@@ -196,7 +201,7 @@
 <svelte:window {onkeydown} />
 
 {#if shareToken}
-  <Shared token={shareToken} />
+  <Shared token={shareToken} shareKey={shareKey} />
 {:else if diary.booting}
   <div class="boot faint">booting ~/diary…</div>
 {:else if !diary.user}

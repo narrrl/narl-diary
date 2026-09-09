@@ -105,7 +105,9 @@ export const api = {
 
   deleteEntry: (id: number) => request<{ ok: true }>(`/entries/${id}`, { method: 'DELETE' }),
 
-  share: (id: number) => request<{ token: string; path: string }>(`/entries/${id}/share`, { method: 'POST' }),
+  /** Publishes the entry, or mints a fresh key for one already published. */
+  share: (id: number) =>
+    request<{ token: string; key: string; path: string }>(`/entries/${id}/share`, { method: 'POST' }),
 
   unshare: (id: number) => request<{ ok: true }>(`/entries/${id}/share`, { method: 'DELETE' }),
 
@@ -123,5 +125,6 @@ export const api = {
 
   backupNow: () => request<BackupStatus>('/backup', { method: 'POST' }),
 
-  readShared: (token: string) => request<SharedEntry>(`/share/${encodeURIComponent(token)}`),
+  readShared: (token: string, key: string) =>
+    request<SharedEntry>(`/share/${encodeURIComponent(token)}/${encodeURIComponent(key)}`),
 }

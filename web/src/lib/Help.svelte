@@ -12,7 +12,7 @@
     ['/', 'full-text search'],
     ['n', 'clear the search'],
     ['s', 'toggle sharing for the entry'],
-    ['y', 'copy the share link'],
+    ['y', 'mint a new share link and copy it'],
     ['x · dd', 'delete the entry (asks first)'],
     [':', 'command line'],
     ['Ctrl-S', 'save, from anywhere'],
