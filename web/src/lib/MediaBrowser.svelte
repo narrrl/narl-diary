@@ -2,19 +2,19 @@
   import { api } from './api'
   import { hooks } from './commands'
   import { embedSnippet } from './markdown'
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
   import { formatBytes, formatStamp } from './util'
 
-  const usage = (entryIds: number[]) =>
-    entryIds.length === 0 ? 'unattached' : entryIds.map((id) => `entry:${id}`).join(' ')
+  const usage = (nodeIds: number[]) =>
+    nodeIds.length === 0 ? 'unattached' : nodeIds.map((id) => `#${id}`).join(' ')
 
-  async function remove(id: string, filename: string, entryIds: number[]) {
-    const used = entryIds.length === 1 ? '1 entry' : `${entryIds.length} entries`
-    const warning = entryIds.length > 0 ? ` it is embedded in ${used}, which will break.` : ''
+  async function remove(id: string, filename: string, nodeIds: number[]) {
+    const used = nodeIds.length === 1 ? '1 document' : `${nodeIds.length} documents`
+    const warning = nodeIds.length > 0 ? ` it is embedded in ${used}, which will break.` : ''
     if (!confirm(`delete ${filename}?${warning}`)) return
-    await diary.guard(async () => {
+    await workspace.guard(async () => {
       await api.deleteMedia(id)
-      await diary.loadMedia()
+      await workspace.loadMedia()
     })
   }
 </script>
@@ -22,12 +22,12 @@
 <div class="sheet">
   <header>
     <span class="accent">:media</span>
-    <span class="faint">{diary.media.length} files</span>
-    <button onclick={() => (diary.overlay = 'none')}>esc</button>
+    <span class="faint">{workspace.media.length} files</span>
+    <button onclick={() => (workspace.overlay = 'none')}>esc</button>
   </header>
 
   <ul>
-    {#each diary.media as file (file.id)}
+    {#each workspace.media as file (file.id)}
       <li>
         <div class="thumb">
           {#if file.mime.startsWith('image/')}
@@ -41,21 +41,21 @@
           <span class="name">{file.filename}</span>
           <span class="faint">
             {formatBytes(file.size)} · {formatStamp(file.created_at)} ·
-            {usage(file.entry_ids)}
+            {usage(file.node_ids)}
           </span>
         </div>
 
         <div class="actions">
-          {#if diary.editing}
+          {#if workspace.editing}
             <button
               onclick={() => {
                 hooks.insertText(embedSnippet(file))
-                diary.overlay = 'none'
+                workspace.overlay = 'none'
               }}>insert</button
             >
           {/if}
-          <button onclick={() => diary.copy(location.origin + file.url)}>copy url</button>
-          <button onclick={() => remove(file.id, file.filename, file.entry_ids)}>rm</button>
+          <button onclick={() => workspace.copy(location.origin + file.url)}>copy url</button>
+          <button onclick={() => remove(file.id, file.filename, file.node_ids)}>rm</button>
         </div>
       </li>
     {:else}

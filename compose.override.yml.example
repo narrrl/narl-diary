@@ -1,6 +1,6 @@
 # Copy to compose.override.yml on the host that runs traefik.
 services:
-  diary:
+  workspace:
     ports: !override []
     networks:
       - narl
@@ -8,10 +8,25 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=narl"
-      - "traefik.http.routers.diary.rule=Host(`diary.narl.io`)"
-      - "traefik.http.routers.diary.entrypoints=websecure"
-      - "traefik.http.routers.diary.tls.certresolver=https_resolver"
-      - "traefik.http.services.diary.loadbalancer.server.port=4242"
+      - "traefik.http.routers.workspace.rule=Host(`workspace.narl.io`)"
+      - "traefik.http.routers.workspace.entrypoints=websecure"
+      - "traefik.http.routers.workspace.tls.certresolver=https_resolver"
+      - "traefik.http.services.workspace.loadbalancer.server.port=4242"
+
+  # Mail, locally. Mailpit accepts everything on 1025 and shows it on 8025, so
+  # the reminders can be read before a real relay is ever involved:
+  #
+  #     WORKSPACE_SMTP_URL=smtp://mailpit:1025
+  #     WORKSPACE_MAIL_TO=you@example.org
+  #
+  # Nothing it receives leaves the host, which is the point of testing here.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    networks:
+      - internal_net
+    ports:
+      - "127.0.0.1:8025:8025"
 
 networks:
   narl:

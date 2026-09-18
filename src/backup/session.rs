@@ -85,9 +85,9 @@ impl StoredSession {
 /// Where a session is kept.
 ///
 /// The OS keyring is the right home for this and is what the desktop client
-/// uses — but it is a Secret Service on D-Bus, and the diary's supported
+/// uses — but it is a Secret Service on D-Bus, and the workspace's supported
 /// deployment is a container, where there is neither. So the default is a
-/// `0600` file next to the database: on the same volume as the diary it is
+/// `0600` file next to the database: on the same volume as the workspace it is
 /// protecting, and no weaker than the thing it sits beside. Build with
 /// `--features keyring` on a host that has a session bus to use the keyring
 /// instead, with the file as the fallback when it cannot be reached.
@@ -174,6 +174,8 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 #[cfg(feature = "keyring")]
+// Names an entry that may already exist in the OS keyring; renaming it would
+// lose the session it points at.
 const KEYRING_SERVICE: &str = "narl-diary";
 #[cfg(feature = "keyring")]
 const KEYRING_USER: &str = "proton-session";

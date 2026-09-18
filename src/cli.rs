@@ -5,24 +5,29 @@
 //! stored session, so the server itself never prompts for anything. In Docker:
 //!
 //! ```sh
-//! docker compose exec -it diary narl-diary proton-login
+//! docker compose exec -it workspace narl-workspace proton-login
 //! ```
 
-use std::io::{IsTerminal, Write};
+use std::{
+    io::{IsTerminal, Write},
+    sync::Arc,
+};
 
 use anyhow::{bail, Context, Result};
-use sqlx::SqlitePool;
+use sqlx::{Row, SqlitePool};
 
-use crate::{backup, config::Config};
+use crate::{backup, config::Config, notify};
 
 pub const USAGE: &str = "\
-narl-diary — a terminal-themed personal diary
+narl-workspace — a terminal-themed personal workspace
 
-    narl-diary                  serve the diary (the default)
-    narl-diary proton-login     log in to Proton Drive and enable backups
-    narl-diary proton-status    show whether backups are configured
-    narl-diary proton-logout    forget the stored Proton session
-    narl-diary backup-now       mirror to Proton Drive once and exit
+    narl-workspace                  serve the workspace (the default)
+    narl-workspace proton-login     log in to Proton Drive and enable backups
+    narl-workspace proton-status    show whether backups are configured
+    narl-workspace proton-logout    forget the stored Proton session
+    narl-workspace backup-now       mirror to Proton Drive once and exit
+    narl-workspace mail-test        send one mail through the configured relay
+    narl-workspace mail-status      show what mail is configured and what is queued
 ";
 
 pub async fn proton_login(config: &Config) -> Result<()> {
@@ -58,7 +63,7 @@ pub async fn proton_login(config: &Config) -> Result<()> {
     .await?;
 
     println!("Logged in. The session is stored at {}.", store.path().display());
-    println!("Backups start with the next server start, or run `narl-diary backup-now`.");
+    println!("Backups start with the next server start, or run `narl-workspace backup-now`.");
     Ok(())
 }
 
@@ -76,7 +81,7 @@ pub async fn proton_status(db: &SqlitePool, config: &Config) -> Result<()> {
     let store = backup::session::SessionStore::new(config.proton_session_path());
     let Some(stored) = store.load()? else {
         println!("Proton Drive backups are not configured.");
-        println!("Run `narl-diary proton-login` to enable them.");
+        println!("Run `narl-workspace proton-login` to enable them.");
         return Ok(());
     };
 
@@ -126,4 +131,89 @@ fn prompt(label: &str) -> Result<String> {
         bail!("nothing entered");
     }
     Ok(line)
+}
+
+/// One mail, straight out. SMTP credentials are wrong the first time, always,
+/// and finding that out from a reminder that quietly never arrived is worse
+/// than finding it out here.
+pub async fn mail_test(db: SqlitePool, config: Arc<Config>) -> Result<()> {
+    let notifier = notify::Notifier::new(db, config)?;
+    notifier
+        .send_test()
+        .await
+        .context("the test mail could not be sent")?;
+    println!("Sent. If it does not arrive, the relay accepted it and something after that did not.");
+    Ok(())
+}
+
+pub async fn mail_status(db: &SqlitePool, config: &Config) -> Result<()> {
+    let mail = &config.mail;
+    let Some(url) = mail.url.as_deref() else {
+        println!("Mail is off. Set WORKSPACE_SMTP_URL to enable notifications.");
+        return Ok(());
+    };
+
+    // The URL may carry a password; only the part that identifies the relay is
+    // worth printing, and printing the rest into a terminal log is not.
+    let relay = url.split('@').next_back().unwrap_or(url);
+    println!("Relay:    {relay}");
+    println!("From:     {}", mail.from);
+    println!("To:       {}", mail.to);
+    println!("Timezone: {}", mail.timezone);
+    match mail.reminder_at {
+        Some(at) if mail.sends("reminder") => {
+            println!("Reminder: {:02}:{:02} when nothing was written", at.hour, at.minute)
+        }
+        _ => println!("Reminder: off"),
+    }
+    match mail.card_due_at {
+        Some(at) if mail.sends("card_due") => {
+            println!("Cards:    {:02}:{:02} for due and overdue cards", at.hour, at.minute)
+        }
+        _ => println!("Cards:    off"),
+    }
+    match mail.digest_at {
+        Some((day, at)) if mail.sends("digest") => println!(
+            "Digest:   {} {:02}:{:02}",
+            notify::weekday_name(day),
+            at.hour,
+            at.minute
+        ),
+        _ => println!("Digest:   off"),
+    }
+    println!("Logins:   {}", if mail.sends("login") { "on" } else { "off" });
+
+    let row = sqlx::query(
+        "SELECT count(*) AS queued,
+                sum(CASE WHEN sent_at IS NULL THEN 1 ELSE 0 END) AS pending,
+                max(sent_at) AS last_sent
+         FROM notifications",
+    )
+    .fetch_one(db)
+    .await?;
+    let queued: i64 = row.get("queued");
+    let pending: Option<i64> = row.get("pending");
+    let last_sent: Option<i64> = row.get("last_sent");
+    println!("Outbox:   {queued} mails, {} unsent", pending.unwrap_or(0));
+    match last_sent {
+        Some(at) => println!(
+            "Last out: {}",
+            crate::notify::local_stamp(config.mail.timezone, at)
+        ),
+        None => println!("Last out: never"),
+    }
+
+    let failed = sqlx::query(
+        "SELECT dedupe_key, attempts, last_error FROM notifications
+         WHERE sent_at IS NULL AND last_error IS NOT NULL ORDER BY created_at LIMIT 5",
+    )
+    .fetch_all(db)
+    .await?;
+    for row in failed {
+        let key: String = row.get("dedupe_key");
+        let attempts: i64 = row.get("attempts");
+        let error: String = row.get("last_error");
+        println!("  {key}: {attempts} attempt(s), {error}");
+    }
+    Ok(())
 }

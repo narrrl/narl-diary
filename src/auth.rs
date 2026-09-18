@@ -9,6 +9,8 @@ use subtle::ConstantTimeEq;
 
 use crate::{config::Config, error::AppError, state::AppState};
 
+// Kept from before the rename: the name is never seen, and changing it would
+// sign every browser out to no purpose.
 pub const COOKIE_NAME: &str = "diary_session";
 
 type HmacSha256 = Hmac<Sha256>;
@@ -20,7 +22,7 @@ fn sign(secret: &[u8], payload: &str) -> String {
 }
 
 /// A session token is `base64(expiry_unix_seconds).base64(hmac)`. There is no
-/// server-side session store: rotating `DIARY_SECRET` invalidates every session.
+/// server-side session store: rotating `WORKSPACE_SECRET` invalidates every session.
 pub fn issue_token(config: &Config) -> String {
     let expires = crate::now() + config.session_days * 86_400;
     let payload = B64.encode(expires.to_string());
@@ -98,7 +100,7 @@ impl FromRequestParts<AppState> for Session {
 #[cfg(test)]
 mod tests {
     use super::{credentials_match, issue_token, verify_token};
-    use crate::config::{BackupConfig, Config};
+    use crate::config::{BackupConfig, Config, MailConfig};
 
     fn config(session_days: i64) -> Config {
         Config {
@@ -115,6 +117,16 @@ mod tests {
                 interval: None,
                 debounce: std::time::Duration::from_secs(0),
                 prune: false,
+            },
+            mail: MailConfig {
+                url: None,
+                from: String::new(),
+                to: String::new(),
+                timezone: chrono_tz::UTC,
+                reminder_at: None,
+                card_due_at: None,
+                digest_at: None,
+                kinds: Vec::new(),
             },
         }
     }

@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { api, type SharedEntry } from './api'
+  import { api, type SharedDocument } from './api'
   import { renderMarkdown } from './markdown'
   import { formatStamp, formatWeekday } from './util'
 
   const { token, shareKey }: { token: string; shareKey: string } = $props()
 
-  let entry = $state<SharedEntry | null>(null)
+  let doc = $state<SharedDocument | null>(null)
   let error = $state('')
 
   $effect(() => {
@@ -16,27 +16,27 @@
     api
       .readShared(token, shareKey)
       .then((data) => {
-        entry = data
-        document.title = data.title.trim() || `~/diary ${formatStamp(data.created_at)}`
+        doc = data
+        document.title = data.name.trim() || `~/workspace ${formatStamp(data.created_at)}`
       })
-      .catch(() => (error = 'this link is not valid, or the entry is no longer shared.'))
+      .catch(() => (error = 'this link is not valid, or the document is no longer shared.'))
   })
 </script>
 
 <main>
   {#if error}
     <p class="error">{error}</p>
-  {:else if entry}
+  {:else if doc}
     <article class="md">
       <div class="meta faint">
-        {formatStamp(entry.created_at)} {formatWeekday(entry.created_at)}
-        <span class="tag">shared entry</span>
+        {formatStamp(doc.created_at)} {formatWeekday(doc.created_at)}
+        <span class="tag">shared document</span>
       </div>
-      {#if entry.title.trim()}<h1>{entry.title}</h1>{/if}
+      {#if doc.name.trim()}<h1>{doc.name}</h1>{/if}
       <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised in renderMarkdown -->
-      {@html renderMarkdown(entry.body, { token, key: shareKey })}
+      {@html renderMarkdown(doc.body, { token, key: shareKey })}
     </article>
-    <footer class="faint">— written in ~/diary</footer>
+    <footer class="faint">— written in ~/workspace</footer>
   {:else}
     <p class="faint">loading…</p>
   {/if}

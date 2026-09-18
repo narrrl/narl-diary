@@ -19,8 +19,8 @@ use crate::{
 };
 
 #[derive(Serialize)]
-pub struct SharedEntry {
-    pub title: String,
+pub struct SharedDocument {
+    pub name: String,
     pub body: String,
     pub created_at: i64,
     pub updated_at: i64,
@@ -45,7 +45,7 @@ fn key_matches(stored: Option<&str>, presented: &str) -> bool {
     bool::from(hash_key(presented).as_bytes().ct_eq(stored.as_bytes()))
 }
 
-/// Publish an entry, or mint a fresh key for one that is already published.
+/// Publish a document, or mint a fresh key for one that is already published.
 ///
 /// The plaintext key is returned exactly once, here. Nothing but its hash is
 /// stored, so a link that the author loses cannot be recovered — only replaced,
@@ -57,21 +57,25 @@ pub async fn enable(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
-    let existing: Option<Option<String>> =
-        sqlx::query("SELECT share_token FROM entries WHERE id = ?1")
-            .bind(id)
-            .fetch_optional(&state.db)
-            .await?
-            .map(|row| row.get("share_token"));
+    let row = sqlx::query("SELECT kind, share_token FROM nodes WHERE id = ?1")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
 
-    let token = match existing {
-        None => return Err(AppError::NotFound),
-        Some(Some(token)) => token,
-        Some(None) => random_secret(),
+    // A share link serves one body. A folder has none, and publishing a whole
+    // subtree behind one key is a different feature with different consequences.
+    if row.get::<String, _>("kind") != super::nodes::DOCUMENT {
+        return Err(AppError::BadRequest("only a document can be shared".into()));
+    }
+
+    let token = match row.get::<Option<String>, _>("share_token") {
+        Some(token) => token,
+        None => random_secret(),
     };
     let key = random_secret();
 
-    sqlx::query("UPDATE entries SET share_token = ?1, share_key_hash = ?2 WHERE id = ?3")
+    sqlx::query("UPDATE nodes SET share_token = ?1, share_key_hash = ?2 WHERE id = ?3")
         .bind(&token)
         .bind(hash_key(&key))
         .bind(id)
@@ -92,7 +96,7 @@ pub async fn disable(
     Path(id): Path<i64>,
 ) -> AppResult<Json<serde_json::Value>> {
     let affected =
-        sqlx::query("UPDATE entries SET share_token = NULL, share_key_hash = NULL WHERE id = ?1")
+        sqlx::query("UPDATE nodes SET share_token = NULL, share_key_hash = NULL WHERE id = ?1")
             .bind(id)
             .execute(&state.db)
             .await?
@@ -109,10 +113,10 @@ pub async fn disable(
 pub async fn read(
     State(state): State<AppState>,
     Path((token, key)): Path<(String, String)>,
-) -> AppResult<Json<SharedEntry>> {
+) -> AppResult<Json<SharedDocument>> {
     let row = sqlx::query(
-        "SELECT title, body, created_at, updated_at, share_key_hash
-         FROM entries WHERE share_token = ?1",
+        "SELECT name, body, created_at, updated_at, share_key_hash
+         FROM nodes WHERE share_token = ?1",
     )
     .bind(&token)
     .fetch_optional(&state.db)
@@ -126,8 +130,8 @@ pub async fn read(
         return Err(AppError::NotFound);
     }
 
-    Ok(Json(SharedEntry {
-        title: row.get("title"),
+    Ok(Json(SharedDocument {
+        name: row.get("name"),
         body: row.get("body"),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
@@ -135,17 +139,17 @@ pub async fn read(
     }))
 }
 
-/// Public: serves a media file only while it is embedded in a shared entry, and
-/// only to a caller holding that entry's key.
+/// Public: serves a media file only while it is embedded in a shared document,
+/// and only to a caller holding that document's key.
 pub async fn serve_media(
     State(state): State<AppState>,
     Path((token, key, id)): Path<(String, String, String)>,
 ) -> AppResult<Response> {
     let stored: Option<String> = sqlx::query(
-        "SELECT e.share_key_hash
-         FROM entry_media em
-         JOIN entries e ON e.id = em.entry_id
-         WHERE em.media_id = ?1 AND e.share_token = ?2",
+        "SELECT n.share_key_hash
+         FROM node_media nm
+         JOIN nodes n ON n.id = nm.node_id
+         WHERE nm.media_id = ?1 AND n.share_token = ?2",
     )
     .bind(&id)
     .bind(&token)

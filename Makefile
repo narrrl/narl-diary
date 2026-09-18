@@ -7,13 +7,13 @@ dev-api:
 dev-web:
 	cd web && bun run dev
 
-# Everything, as one self-contained release binary at target/release/narl-diary.
+# Everything, as one self-contained release binary at target/release/narl-workspace.
 build:
 	cd web && bun install && bun run build
 	cargo build --release
 
 run: build
-	./target/release/narl-diary
+	./target/release/narl-workspace
 
 check:
 	cargo clippy --all-targets -- -D warnings

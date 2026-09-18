@@ -1,6 +1,6 @@
 <script lang="ts">
   import { ApiError } from './api'
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
 
   let username = $state('')
   let password = $state('')
@@ -17,7 +17,7 @@
     busy = true
     error = ''
     try {
-      await diary.login(username, password)
+      await workspace.login(username, password)
     } catch (e) {
       // The server answers a wrong password with a bare 401; the throttle's
       // "wait Ns" message is worth showing verbatim.
@@ -37,10 +37,10 @@
 <main>
   <form onsubmit={submit}>
     <pre class="banner">{`╭──────────────────────────────────╮
-│  ~/diary                         │
+│  ~/workspace                     │
 ╰──────────────────────────────────╯`}</pre>
 
-    <p class="faint">a private log. one user. one machine.</p>
+    <p class="faint">a private workspace. one user. one machine.</p>
 
     <label>
       <span class="accent">login:</span>

@@ -1,16 +1,16 @@
 //! Automatic backup of the whole data directory to Proton Drive.
 //!
 //! The server registers itself as a Drive *device* — a sync root with its own
-//! share — and keeps that folder equal to `DIARY_DATA_DIR`. It is deliberately
+//! share — and keeps that folder equal to `WORKSPACE_DATA_DIR`. It is deliberately
 //! one-way: this is a backup, not a two-master sync, so nothing that happens in
-//! Proton Drive can ever reach back and change the diary.
+//! Proton Drive can ever reach back and change the workspace.
 //!
-//! It is dormant until someone runs `narl-diary proton-login` once. Nothing
+//! It is dormant until someone runs `narl-workspace proton-login` once. Nothing
 //! else in the application depends on it, and a Proton outage costs log lines,
 //! never a write.
 //!
 //! Runs are change-driven with a timer as a backstop: entry and media routes
-//! call [`Backup::signal`], the loop waits for the diary to fall quiet, and
+//! call [`Backup::signal`], the loop waits for the workspace to fall quiet, and
 //! mirrors once. An hour of writing is one backup, not sixty.
 
 pub mod proton;
@@ -72,7 +72,7 @@ impl Backup {
             config,
             store,
             wake: Notify::new(),
-            // The diary may have been written to while this process was down,
+            // The workspace may have been written to while this process was down,
             // and a restart is the cheapest moment to find out.
             dirty: AtomicBool::new(true),
             status: Mutex::new(Status {
@@ -168,7 +168,7 @@ impl Backup {
     /// Nothing is written to the device's own root, because Proton refuses it —
     /// a device root holds folders, and a file there is answered with 422
     /// "Cannot create file at the root of a device". `data/` is that folder,
-    /// and it is also the honest name for what it holds: the diary's data
+    /// and it is also the honest name for what it holds: the workspace's data
     /// directory, copied.
     ///
     /// Remembering them is the point. Resolving either by name means listing a
@@ -278,7 +278,7 @@ impl Backup {
 pub fn spawn(backup: Arc<Backup>) {
     if backup.store.load().ok().flatten().is_none() {
         tracing::info!(
-            "Proton Drive backups are not configured — run `narl-diary proton-login` to enable them"
+            "Proton Drive backups are not configured — run `narl-workspace proton-login` to enable them"
         );
         return;
     }
@@ -301,7 +301,7 @@ pub fn spawn(backup: Arc<Backup>) {
                 }
             }
 
-            // Let the diary fall quiet. Every further change restarts the wait,
+            // Let the workspace fall quiet. Every further change restarts the wait,
             // so a writing session is mirrored once, when it is over.
             loop {
                 tokio::select! {
@@ -315,11 +315,11 @@ pub fn spawn(backup: Arc<Backup>) {
     });
 }
 
-/// One-shot mirror for `narl-diary backup-now`, without starting a server.
+/// One-shot mirror for `narl-workspace backup-now`, without starting a server.
 pub async fn run_once(db: SqlitePool, config: Arc<Config>) -> Result<Summary> {
     let backup = Backup::new(db, config);
     backup
         .run_now()
         .await?
-        .context("no Proton session stored — run `narl-diary proton-login` first")
+        .context("no Proton session stored — run `narl-workspace proton-login` first")
 }

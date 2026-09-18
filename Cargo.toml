@@ -1,5 +1,5 @@
 [package]
-name = "narl-diary"
+name = "narl-workspace"
 version = "0.1.0"
 edition = "2021"
 description = "A terminal-themed personal diary for the browser"
@@ -31,6 +31,14 @@ tempfile = "3.27.0"
 # Only for `--features keyring`, on a host that has a Secret Service; the
 # container deployment has no session bus and falls back to the session file.
 keyring = { version = "3", features = ["sync-secret-service", "crypto-rust"], optional = true }
+
+# Mail. rustls rather than native-tls: the container has no OpenSSL, and the
+# Proton client already pulls rustls in.
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "pool", "builder", "hostname", "tokio1-rustls-tls"] }
+# "did I write today?" and "is this due today?" are local-day questions, and DST
+# rules out doing them with a fixed offset.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
 
 proton-drive-rs = "0.6.2"
 proton-sdk = "0.6.2"

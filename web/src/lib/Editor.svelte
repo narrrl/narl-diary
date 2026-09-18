@@ -21,7 +21,7 @@
   import { onDestroy, onMount } from 'svelte'
   import { commands, hooks, runCommand } from './commands'
   import { embedSnippet } from './markdown'
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
 
   let host = $state<HTMLDivElement>()
   let view: EditorView | undefined
@@ -110,18 +110,18 @@
     const push = registers.pushText.bind(registers)
     registers.pushText = (name, operator, text, linewise, blockwise) => {
       push(name, operator, text, linewise, blockwise)
-      if (!name && text && diary.clipboard) void diary.copy(text)
+      if (!name && text && workspace.clipboard) void workspace.copy(text)
     }
   }
 
   /**
-   * `?` is vim's search-backwards, but the diary advertises it as the help key
+   * `?` is vim's search-backwards, but the workspace advertises it as the help key
    * everywhere else, so it opens the reference here too. `/` still searches.
    */
   function bindHelpKey() {
-    Vim.defineAction('diaryHelp', () => void runCommand('help'))
+    Vim.defineAction('workspaceHelp', () => void runCommand('help'))
     for (const context of ['normal', 'visual'] as const) {
-      Vim.mapCommand('?', 'action', 'diaryHelp', {}, { context })
+      Vim.mapCommand('?', 'action', 'workspaceHelp', {}, { context })
     }
   }
 
@@ -145,8 +145,8 @@
 
   async function uploadFiles(files: File[]) {
     if (files.length === 0) return
-    await diary.guard(async () => {
-      const uploaded = await diary.upload(files)
+    await workspace.guard(async () => {
+      const uploaded = await workspace.upload(files)
       insertAtCursor(uploaded.map(embedSnippet).join('\n\n'))
     })
   }
@@ -157,7 +157,7 @@
     mirrorUnnamedRegisterToClipboard()
 
     const extensions = [
-      ...(diary.vimEnabled ? [vim({ status: false })] : []),
+      ...(workspace.vimEnabled ? [vim({ status: false })] : []),
       history(),
       drawSelection(),
       dropCursor(),
@@ -167,13 +167,13 @@
       markdown({ base: markdownLanguage, codeLanguages: [] }),
       syntaxHighlighting(markdownHighlight),
       EditorView.lineWrapping,
-      placeholder('dear diary…'),
+      placeholder('write…'),
       editorTheme,
       keymap.of([
         {
           key: 'Mod-s',
           preventDefault: true,
-          run: () => (void diary.guard(() => diary.save()), true),
+          run: () => (void workspace.guard(() => workspace.save()), true),
         },
         ...defaultKeymap,
         ...historyKeymap,
@@ -181,8 +181,8 @@
       ]),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
-          diary.draft.body = update.state.doc.toString()
-          diary.touch()
+          workspace.draft.body = update.state.doc.toString()
+          workspace.touch()
         }
       }),
       EditorView.domEventHandlers({
@@ -204,7 +204,7 @@
     ]
 
     view = new EditorView({
-      state: EditorState.create({ doc: diary.draft.body, extensions }),
+      state: EditorState.create({ doc: workspace.draft.body, extensions }),
       parent: host!,
     })
 
@@ -212,21 +212,21 @@
     hooks.insertText = insertAtCursor
     view.focus()
 
-    const cm = diary.vimEnabled ? getCM(view) : null
+    const cm = workspace.vimEnabled ? getCM(view) : null
     if (cm) {
       // Keep the status line's mode indicator in step with the editor.
       const emitter = cm as unknown as {
         on?: (event: string, handler: (e: { mode: string }) => void) => void
       }
       emitter.on?.('vim-mode-change', (event) => {
-        diary.vimMode = event.mode
+        workspace.vimMode = event.mode
       })
 
       // A fresh entry starts in insert mode; an existing one starts in normal
       // mode, the way opening a file in vim does.
-      if (diary.enterInsert) {
-        diary.enterInsert = false
-        Vim.handleKey(cm, 'i', 'diary')
+      if (workspace.enterInsert) {
+        workspace.enterInsert = false
+        Vim.handleKey(cm, 'i', 'workspace')
       }
     }
   })
@@ -236,7 +236,7 @@
     view = undefined
     hooks.focusEditor = () => {}
     hooks.insertText = () => {}
-    diary.vimMode = 'normal'
+    workspace.vimMode = 'normal'
   })
 </script>
 

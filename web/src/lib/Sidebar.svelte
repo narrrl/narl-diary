@@ -1,75 +1,85 @@
 <script lang="ts">
-  import type { EntrySummary } from './api'
+  import type { NodeSummary } from './api'
   import { hooks, runCommand } from './commands'
-  import { diary } from './store.svelte'
+  import SpaceBar from './SpaceBar.svelte'
+  import { workspace } from './store.svelte'
   import { formatDay, formatTime, formatWeekday } from './util'
 
   let list = $state<HTMLUListElement>()
 
   // Keep the cursor line visible while navigating with j/k.
   $effect(() => {
-    const index = diary.cursor
+    const index = workspace.cursor
     const node = list?.querySelector<HTMLElement>(`[data-index="${index}"]`)
     node?.scrollIntoView({ block: 'nearest' })
   })
 
-  function label(entry: EntrySummary) {
-    return entry.title.trim() || entry.excerpt.trim() || '(empty)'
+  function label(node: NodeSummary) {
+    return node.name.trim() || node.excerpt.trim() || node.slug
   }
 
+  /* A folder is listed by what is in it; a document by when it was written. */
+  const aside = (node: NodeSummary) =>
+    node.kind === 'document' ? formatTime(node.created_at) : `${node.child_count}`
+
   function pick(index: number) {
-    diary.cursor = index
-    void diary.guard(() => diary.openSelected())
+    workspace.cursor = index
+    void workspace.guard(() => workspace.openSelected())
   }
 </script>
 
 <div class="sidebar">
   <div class="head">
-    <span class="accent">~/diary</span>
+    <span class="accent">~/{workspace.space?.slug ?? 'diary'}</span>
     <span class="faint count">
-      {diary.entries.length} {diary.entries.length === 1 ? 'entry' : 'entries'}
+      {workspace.nodes.length} {workspace.nodes.length === 1 ? 'item' : 'items'}
     </span>
     <span class="tools">
-      <button title="new entry (o)" onclick={() => runCommand('new')}>+</button>
+      <button title="new document (o)" onclick={() => runCommand('new')}>+</button>
+      <button title="new folder (O)" onclick={() => hooks.openCommandLine(':mkdir ')}>[+]</button>
       <button title="search (/)" onclick={() => hooks.openCommandLine('/')}>/</button>
       <button title="command line (:)" onclick={() => hooks.openCommandLine(':')}>:</button>
       <button title="help (?)" onclick={() => runCommand('help')}>?</button>
     </span>
   </div>
 
-  {#if diary.query}
+  <SpaceBar />
+
+  {#if workspace.query}
     <div class="filter">
-      <span class="faint">/</span>{diary.query}
-      <button title="clear search" onclick={() => diary.guard(() => diary.search(''))}>esc</button>
+      <span class="faint">/</span>{workspace.query}
+      <button title="clear search" onclick={() => workspace.guard(() => workspace.search(''))}>esc</button>
     </div>
   {/if}
 
   <ul bind:this={list}>
-    {#each diary.entries as entry, index (entry.id)}
-      {@const previous = diary.entries[index - 1]}
-      {#if !diary.query && (!previous || formatDay(previous.created_at) !== formatDay(entry.created_at))}
+    {#each workspace.nodes as node, index (node.id)}
+      {@const previous = workspace.nodes[index - 1]}
+      <!-- Day headings only make sense in a list that is a journal: documents,
+           in date order, not a search and not a folder listing. -->
+      {#if !workspace.query && node.kind === 'document' && (!previous || previous.kind !== 'document' || formatDay(previous.created_at) !== formatDay(node.created_at))}
         <li class="daybreak">
-          <span>{formatDay(entry.created_at)}</span>
-          <span class="faint">{formatWeekday(entry.created_at)}</span>
+          <span>{formatDay(node.created_at)}</span>
+          <span class="faint">{formatWeekday(node.created_at)}</span>
         </li>
       {/if}
       <li>
         <button
           class="row"
-          class:active={index === diary.cursor}
-          class:open={diary.open?.id === entry.id}
+          class:active={index === workspace.cursor}
+          class:open={workspace.open?.id === node.id}
           data-index={index}
           onclick={() => pick(index)}
         >
-          <span class="caret">{index === diary.cursor ? '>' : ' '}</span>
-          <span class="time">{formatTime(entry.created_at)}</span>
-          <span class="title">{label(entry)}</span>
-          {#if entry.shared}<span class="shared" title="shared">◉</span>{/if}
+          <span class="caret">{index === workspace.cursor ? '>' : ' '}</span>
+          <span class="time">{aside(node)}</span>
+          <span class="title">{node.kind === 'document' ? '' : '/'}{label(node)}</span>
+          {#if node.shared}<span class="shared" title="shared">◉</span>{/if}
         </button>
       </li>
     {:else}
       <li class="empty faint">
-        {diary.query ? 'no matches' : 'no entries yet — press o to write one'}
+        {workspace.query ? 'no matches' : 'nothing here yet — o writes, O makes a folder'}
       </li>
     {/each}
   </ul>

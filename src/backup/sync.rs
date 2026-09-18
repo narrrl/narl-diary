@@ -1,17 +1,17 @@
-//! The mirror itself: make the device folder look like `DIARY_DATA_DIR`.
+//! The mirror itself: make the device folder look like `WORKSPACE_DATA_DIR`.
 //!
 //! The remote layout is deliberately the local one, not a rendering of it:
 //!
 //! ```text
-//! narl-diary/            the device's sync root — folders only, per Proton
-//!   data/                the diary's data directory, copied
+//! narl-workspace/            the device's sync root — folders only, per Proton
+//!   data/                the workspace's data directory, copied
 //!     RESTORE.txt        what this is and how to put it back
 //!     diary.db           a consistent snapshot, one revision per change
 //!     uploads/<uuid>     every uploaded file, under the name the database knows
 //! ```
 //!
 //! so restoring is copying two things into an empty data directory, with no
-//! tool in between. The readable-anywhere view of the diary is what `:export!`
+//! tool in between. The readable-anywhere view of the workspace is what `:export!`
 //! is for; this is the copy that can be *restored*.
 
 use std::path::{Path, PathBuf};
@@ -34,17 +34,18 @@ pub struct Summary {
 }
 
 const RESTORE: &str = "\
-This is a Proton Drive mirror of a ~/diary server. It is the contents of the
+This is a Proton Drive mirror of a ~/workspace server. It is the contents of the
 server's data directory, one folder down from the device root because Proton
 does not allow files directly in it.
 
-  diary.db          the whole diary: entries, media metadata, share tokens
+  diary.db          everything written: documents, boards, media metadata,
+                    share tokens (the file keeps its original name)
   uploads/<uuid>    every uploaded file; diary.db gives each one its real name
 
-To restore, stop the diary, empty its data directory, and copy both back:
+To restore, stop the workspace, empty its data directory, and copy both back:
 
-  DIARY_DATA_DIR/diary.db
-  DIARY_DATA_DIR/uploads/
+  WORKSPACE_DATA_DIR/diary.db
+  WORKSPACE_DATA_DIR/uploads/
 
 The database is a snapshot taken with `VACUUM INTO`, so it is internally
 consistent and carries no write-ahead log: it can be opened directly.
@@ -357,7 +358,7 @@ pub(crate) fn parse_uid(text: &str) -> Option<NodeUid> {
 }
 
 /// Streaming sha256 of a file, on the blocking pool: the database snapshot is
-/// as large as the diary, and photographs are larger.
+/// as large as the workspace, and photographs are larger.
 async fn hash_file(path: PathBuf) -> Result<String> {
     tokio::task::spawn_blocking(move || -> Result<String> {
         let mut file = std::fs::File::open(&path)

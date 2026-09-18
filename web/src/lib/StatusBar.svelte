@@ -1,16 +1,19 @@
 <script lang="ts">
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
   import { isTouchDevice } from './util'
 
   const mode = $derived(
-    diary.editing ? (diary.vimEnabled ? diary.vimMode.toUpperCase() : 'EDIT') : 'BROWSE',
+    workspace.editing ? (workspace.vimEnabled ? workspace.vimMode.toUpperCase() : 'EDIT') : 'BROWSE',
   )
 
+  // The path is the file name here: work/einarbeiten/01-was-ist-eebus.
   const file = $derived(
-    diary.open ? `entry:${diary.open.id}${diary.dirty ? ' [+]' : ''}` : '[no entry]',
+    workspace.open
+      ? `${workspace.here}/${workspace.open.slug}${workspace.dirty ? ' [+]' : ''}`
+      : `${workspace.here || '~'}/`,
   )
 
-  const lines = $derived(diary.editing ? diary.draft.body.split('\n').length : null)
+  const lines = $derived(workspace.editing ? workspace.draft.body.split('\n').length : null)
 </script>
 
 <footer>
@@ -19,15 +22,15 @@
   </span>
   <span class="file">{file}</span>
 
-  <span class="msg" class:error={diary.flash?.kind === 'error'}>
-    {diary.flash?.text ?? ''}
+  <span class="msg" class:error={workspace.flash?.kind === 'error'}>
+    {workspace.flash?.text ?? ''}
   </span>
 
   {#if lines !== null}<span class="faint">{lines}L</span>{/if}
   <span class="faint hint">
     {isTouchDevice ? 'tap : for commands' : '? help · : command · / search'}
   </span>
-  <span class="user accent">{diary.user}</span>
+  <span class="user accent">{workspace.user}</span>
 </footer>
 
 <style>

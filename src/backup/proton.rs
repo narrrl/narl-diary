@@ -8,7 +8,7 @@ use proton_sdk::session::ProtonApiSession;
 use super::session::{SessionStore, StoredSession};
 
 /// What Proton asks a third-party client to tell anyone it takes credentials
-/// from. Shown by `narl-diary proton-login` before it asks for anything.
+/// from. Shown by `narl-workspace proton-login` before it asks for anything.
 pub const DISCLOSURE: &str =
     "This is a third-party application not officially supported by Proton.";
 
@@ -20,10 +20,10 @@ pub const DISCLOSURE: &str =
 /// application — a header that misrepresents its client, or imitates a
 /// first-party Proton one, is a rule violation, not a cosmetic detail, and a
 /// malformed one is answered with a 422 "unusual activity" that no login
-/// survives. So: `narl_diary` is the application, the version is the crate's
+/// survives. So: `narl_workspace` is the application, the version is the crate's
 /// own, and the channel follows it — a `0.x` release is not a stable one, and
 /// saying otherwise would be the same misrepresentation in miniature.
-const APP_NAME: &str = "narl_diary";
+const APP_NAME: &str = "narl_workspace";
 
 fn app_version() -> String {
     let version = env!("CARGO_PKG_VERSION");
@@ -34,11 +34,8 @@ fn app_version() -> String {
 /// The identification headers. Overridable only for the case the shape itself
 /// changes on Proton's side; the honest default is the one above.
 fn client_config() -> ProtonClientConfiguration {
-    let version = std::env::var("DIARY_PROTON_APP_VERSION")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(app_version);
-    let agent = format!("narl-diary/{}", env!("CARGO_PKG_VERSION"));
+    let version = crate::config::var("PROTON_APP_VERSION").unwrap_or_else(app_version);
+    let agent = format!("narl-workspace/{}", env!("CARGO_PKG_VERSION"));
     ProtonClientConfiguration::new(version).with_user_agent(agent)
 }
 
@@ -95,7 +92,7 @@ pub async fn resume(store: &SessionStore) -> Result<Option<ProtonDriveClient>> {
 
     if stored.key_salts.is_empty() {
         return Err(anyhow!(
-            "the stored Proton session has no key salts — run `narl-diary proton-login` again"
+            "the stored Proton session has no key salts — run `narl-workspace proton-login` again"
         ));
     }
 
@@ -119,7 +116,7 @@ pub async fn resume(store: &SessionStore) -> Result<Option<ProtonDriveClient>> {
         stored.mailbox_password.clone().into_bytes(),
         stored.key_salts.clone(),
     )
-    // A diary is mostly small files; one atomic request beats the
+    // A workspace is mostly small files; one atomic request beats the
     // draft/block/commit dance for anything that fits in a single block.
     .with_small_file_upload(true);
 
@@ -128,7 +125,7 @@ pub async fn resume(store: &SessionStore) -> Result<Option<ProtonDriveClient>> {
 
 /// The device this server owns, registered on first use.
 ///
-/// A device is a sync root with its own share, which is what makes the diary
+/// A device is a sync root with its own share, which is what makes the workspace
 /// appear in Proton Drive as a machine rather than as a folder someone dropped
 /// in My Files — and keeps it out of the way of everything else in the account.
 pub async fn ensure_device(client: &ProtonDriveClient, name: &str) -> Result<Device> {
@@ -138,7 +135,7 @@ pub async fn ensure_device(client: &ProtonDriveClient, name: &str) -> Result<Dev
         .context("could not list the account's devices")?;
 
     // A device whose name failed to decrypt is not ours to claim: adopting it
-    // would mirror the diary into a stranger of a folder.
+    // would mirror the workspace into a stranger of a folder.
     if let Some(device) = devices
         .into_iter()
         .find(|d| d.name.as_deref().map(|n| n == name).unwrap_or(false))

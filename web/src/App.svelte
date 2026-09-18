@@ -1,15 +1,16 @@
 <script lang="ts">
   import { hooks, runCommand } from './lib/commands'
   import { embedSnippet } from './lib/markdown'
+  import Board from './lib/Board.svelte'
   import CommandLine from './lib/CommandLine.svelte'
-  import EntryPane from './lib/EntryPane.svelte'
+  import DocumentPane from './lib/DocumentPane.svelte'
   import Help from './lib/Help.svelte'
   import Login from './lib/Login.svelte'
   import MediaBrowser from './lib/MediaBrowser.svelte'
   import Shared from './lib/Shared.svelte'
   import Sidebar from './lib/Sidebar.svelte'
   import StatusBar from './lib/StatusBar.svelte'
-  import { diary } from './lib/store.svelte'
+  import { workspace } from './lib/store.svelte'
 
   /*
    * A share link is /s/<token>#<key>. The fragment never leaves the browser, so
@@ -22,18 +23,26 @@
 
   let cmdline = $state<string | null>(null)
   let fileInput = $state<HTMLInputElement>()
+  let folderInput = $state<HTMLInputElement>()
+  let archiveInput = $state<HTMLInputElement>()
   let shell = $state<HTMLDivElement>()
   let overlayEl = $state<HTMLDivElement>()
   let pending = $state('')
 
-  if (!shareToken) void diary.boot()
+  if (!shareToken) void workspace.boot()
 
   $effect(() => {
-    document.documentElement.dataset.theme = diary.theme
+    document.documentElement.dataset.theme = workspace.theme
+  })
+
+  $effect(() => {
+    folderInput?.setAttribute('webkitdirectory', '')
   })
 
   $effect(() => {
     hooks.pickFiles = () => fileInput?.click()
+    hooks.pickFolder = () => folderInput?.click()
+    hooks.pickArchive = () => archiveInput?.click()
     hooks.focusList = () => shell?.focus()
     hooks.openCommandLine = (initial) => (cmdline = initial)
   })
@@ -43,15 +52,15 @@
    * window handler instead of being swallowed by the editor underneath.
    */
   $effect(() => {
-    if (diary.overlay !== 'none') {
+    if (workspace.overlay !== 'none') {
       overlayEl?.focus()
-      return () => (diary.editing ? hooks.focusEditor() : shell?.focus())
+      return () => (workspace.editing ? hooks.focusEditor() : shell?.focus())
     }
   })
 
   // Guard against losing a half-written entry to a stray refresh.
   $effect(() => {
-    if (!diary.dirty) return
+    if (!workspace.dirty) return
     const warn = (event: BeforeUnloadEvent) => event.preventDefault()
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
@@ -62,10 +71,87 @@
     const files = Array.from(input.files ?? [])
     input.value = ''
     if (files.length === 0) return
-    await diary.guard(async () => {
-      const uploaded = await diary.upload(files)
+    await workspace.guard(async () => {
+      const uploaded = await workspace.upload(files)
       hooks.insertText(uploaded.map(embedSnippet).join('\n\n'))
     })
+  }
+
+  /*
+   * A folder upload is the same multipart body as any other, except that each
+   * file carries the path it had inside the folder — which is what makes the
+   * tree on the other side possible.
+   */
+  async function importFolder(event: Event) {
+    const input = event.target as HTMLInputElement
+    const files = Array.from(input.files ?? [])
+    input.value = ''
+    if (files.length === 0) return
+    await workspace.guard(() => workspace.importFolder(files))
+  }
+
+  /*
+   * The board reads the same keys as the list, one dimension wider: h/l walk
+   * the lists, j/k the cards, and the shifted pair takes the card along. Only
+   * `:` and `?` fall through to the keys below, because everything else would
+   * act on a tree that is not on screen.
+   */
+  function boardKey(key: string): boolean {
+    switch (key) {
+      case 'h':
+      case 'ArrowLeft':
+        workspace.moveList(-1)
+        return true
+      case 'l':
+      case 'ArrowRight':
+        workspace.moveList(1)
+        return true
+      case 'j':
+      case 'ArrowDown':
+        workspace.moveCard(1)
+        return true
+      case 'k':
+      case 'ArrowUp':
+        workspace.moveCard(-1)
+        return true
+      case 'J':
+        void workspace.guard(() => workspace.nudgeCard(1))
+        return true
+      case 'K':
+        void workspace.guard(() => workspace.nudgeCard(-1))
+        return true
+      case 'H':
+        void workspace.guard(() => workspace.sendCard(-1))
+        return true
+      case 'L':
+        void workspace.guard(() => workspace.sendCard(1))
+        return true
+      case 'G':
+        workspace.cardCursor = Math.max((workspace.list?.cards.length ?? 0) - 1, 0)
+        return true
+      case 'Enter':
+        void workspace.guard(() => workspace.openCard())
+        return true
+      case 'o':
+        cmdline = ':card '
+        return true
+      case 't':
+      case ' ':
+        void workspace.guard(() => workspace.toggleDone())
+        return true
+      case 'x':
+        void runCommand('delete')
+        return true
+      case 'r':
+        void workspace.guard(() => workspace.reloadBoard())
+        return true
+      case 'q':
+      case 'Escape':
+        workspace.closeBoard()
+        return true
+      default:
+        return false
+    }
   }
 
   function isTypingTarget(target: EventTarget | null) {
@@ -82,13 +168,13 @@
   function onkeydown(event: KeyboardEvent) {
     if (event.key === 's' && (event.metaKey || event.ctrlKey)) {
       event.preventDefault()
-      if (diary.open) void diary.guard(() => diary.save())
+      if (workspace.open) void workspace.guard(() => workspace.save())
       return
     }
 
     if (event.key === 'Escape') {
-      if (diary.overlay !== 'none') {
-        diary.overlay = 'none'
+      if (workspace.overlay !== 'none') {
+        workspace.overlay = 'none'
         return
       }
       if (cmdline !== null) {
@@ -98,10 +184,10 @@
       }
     }
 
-    if (diary.overlay !== 'none') {
+    if (workspace.overlay !== 'none') {
       if (event.key === 'q' || event.key === '?') {
         event.preventDefault()
-        diary.overlay = 'none'
+        workspace.overlay = 'none'
       }
       return
     }
@@ -113,10 +199,26 @@
     const previous = pending
     pending = ''
 
+    if (workspace.view === 'board') {
+      if (previous === 'g' && key === 'g') {
+        event.preventDefault()
+        workspace.cardCursor = 0
+        return
+      }
+      if (key === 'g') {
+        pending = key
+        return
+      }
+      if (boardKey(key)) {
+        event.preventDefault()
+        return
+      }
+    }
+
     // Two-key sequences: gg and dd.
     if (previous === 'g' && key === 'g') {
       event.preventDefault()
-      diary.cursor = 0
+      workspace.cursor = 0
       return
     }
     if (previous === 'd' && key === 'd') {
@@ -133,26 +235,32 @@
       case 'j':
       case 'ArrowDown':
         event.preventDefault()
-        diary.move(1)
+        workspace.move(1)
         break
       case 'k':
       case 'ArrowUp':
         event.preventDefault()
-        diary.move(-1)
+        workspace.move(-1)
         break
       case 'G':
         event.preventDefault()
-        diary.cursor = Math.max(diary.entries.length - 1, 0)
+        workspace.cursor = Math.max(workspace.nodes.length - 1, 0)
         break
       case 'Enter':
       case 'l':
       case 'ArrowRight':
         event.preventDefault()
-        void diary.guard(() => diary.openSelected())
+        void workspace.guard(() => workspace.openSelected())
         break
       case 'o':
         event.preventDefault()
         void runCommand('new')
+        break
+      case 'O':
+        // The name has to come from somewhere, and the command line is where
+        // names are typed — this only saves typing `:mkdir `.
+        event.preventDefault()
+        cmdline = ':mkdir '
         break
       case 'i':
       case 'a':
@@ -161,10 +269,16 @@
         break
       case 'h':
       case 'ArrowLeft':
+        // Out of the document if one is open, otherwise up a level — the same
+        // key means "leftwards" at both depths.
+        event.preventDefault()
+        if (workspace.open) void runCommand('q')
+        else void workspace.guard(() => workspace.up())
+        break
       case 'q':
       case 'Escape':
         event.preventDefault()
-        if (diary.open) void runCommand('q')
+        if (workspace.open) void runCommand('q')
         break
       case 'x':
         event.preventDefault()
@@ -172,7 +286,7 @@
         break
       case 's':
         event.preventDefault()
-        void runCommand(diary.selected?.shared ? 'unshare' : 'share')
+        void runCommand(workspace.selected?.shared ? 'unshare' : 'share')
         break
       case 'y':
         event.preventDefault()
@@ -180,7 +294,7 @@
         break
       case 'n':
         event.preventDefault()
-        if (diary.query) void diary.guard(() => diary.search(''))
+        if (workspace.query) void workspace.guard(() => workspace.search(''))
         break
       case '/':
         event.preventDefault()
@@ -202,32 +316,39 @@
 
 {#if shareToken}
   <Shared token={shareToken} shareKey={shareKey} />
-{:else if diary.booting}
-  <div class="boot faint">booting ~/diary…</div>
-{:else if !diary.user}
+{:else if workspace.booting}
+  <div class="boot faint">booting ~/workspace…</div>
+{:else if !workspace.user}
   <Login />
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <div class="shell" bind:this={shell} tabindex="-1">
-    <div class="panes" class:reading={!!diary.open}>
+    {#if workspace.view === 'board'}
+      <!-- The board takes the whole width: its columns are the two panes. -->
+      <div class="panes board"><Board /></div>
+    {:else}
+    <div class="panes" class:reading={!!workspace.open}>
       <div class="list"><Sidebar /></div>
       <div class="entry">
-        {#if diary.open}
-          <EntryPane />
+        {#if workspace.open}
+          <DocumentPane />
         {:else}
           <div class="placeholder faint">
             <pre>{`  ┌─────────────────────────────┐
   │  nothing open               │
   │                             │
-  │  o   write a new entry      │
+  │  o   write a new document   │
+  │  O   make a folder          │
   │  j/k browse, Enter opens    │
-  │  /   search everything      │
+  │  h   up one level           │
+  │  /   search this space      │
   │  ?   help                   │
   └─────────────────────────────┘`}</pre>
         </div>
         {/if}
       </div>
     </div>
+    {/if}
 
     <StatusBar />
 
@@ -235,17 +356,21 @@
       <CommandLine initial={cmdline} close={() => (cmdline = null)} />
     {/if}
 
-    {#if diary.overlay !== 'none'}
+    {#if workspace.overlay !== 'none'}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions, a11y_no_noninteractive_tabindex -->
-      <div class="overlay" tabindex="-1" bind:this={overlayEl} onclick={(e) => e.target === e.currentTarget && (diary.overlay = 'none')}
+      <div class="overlay" tabindex="-1" bind:this={overlayEl} onclick={(e) => e.target === e.currentTarget && (workspace.overlay = 'none')}
       >
-        {#if diary.overlay === 'help'}<Help />{:else}<MediaBrowser />{/if}
+        {#if workspace.overlay === 'help'}<Help />{:else}<MediaBrowser />{/if}
       </div>
     {/if}
   </div>
 {/if}
 
 <input class="hidden" type="file" multiple bind:this={fileInput} onchange={attach} />
+<!-- `webkitdirectory` is set from script: it is the one attribute browsers
+     agree on for picking a folder, and no typed attribute list carries it. -->
+<input class="hidden" type="file" multiple bind:this={folderInput} onchange={importFolder} />
+<input class="hidden" type="file" accept=".zip" bind:this={archiveInput} onchange={importFolder} />
 
 <style>
   .boot { display: grid; place-items: center; height: 100%; }
@@ -264,6 +389,8 @@
     display: grid;
     grid-template-columns: minmax(28ch, 34ch) 1fr;
   }
+
+  .panes.board { grid-template-columns: 1fr; }
 
   .list, .entry { min-width: 0; overflow: hidden; }
 

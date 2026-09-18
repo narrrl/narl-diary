@@ -1,26 +1,44 @@
 <script lang="ts">
   import { commands, groups, type CommandSpec, type Group } from './commands'
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
 
   const keys: [string, string][] = [
-    ['j / k · ↓ ↑', 'move down / up the entry list'],
-    ['gg / G', 'first / last entry'],
-    ['Enter · l', 'open the highlighted entry'],
-    ['o', 'new entry, straight into insert mode'],
-    ['i · a', 'edit the open entry'],
-    ['Esc · h · q', 'back out to the list'],
-    ['/', 'full-text search'],
+    ['j / k · ↓ ↑', 'move down / up the list'],
+    ['gg / G', 'first / last row'],
+    ['Enter · l', 'open a document, or enter a folder'],
+    ['h', 'up one level, or back out of a document'],
+    ['o', 'new document here, straight into insert mode'],
+    ['O', 'new folder here'],
+    ['i · a', 'edit the open document'],
+    ['Esc · q', 'back out to the list'],
+    ['/', 'full-text search, inside the current space'],
     ['n', 'clear the search'],
-    ['s', 'toggle sharing for the entry'],
+    ['s', 'toggle sharing for the document'],
     ['y', 'mint a new share link and copy it'],
-    ['x · dd', 'delete the entry (asks first)'],
+    ['x · dd', 'delete what is selected (asks first)'],
     [':', 'command line'],
     ['Ctrl-S', 'save, from anywhere'],
     ['?', 'this screen — in the editor too'],
   ]
 
+  /* The board rebinds most keys, so it gets its own column rather than
+     footnotes on the list keys. */
+  const boardKeys: [string, string][] = [
+    ['h / l', 'to the list left / right'],
+    ['j / k', 'down / up the cards'],
+    ['J / K', 'move the card down / up its list'],
+    ['H / L', 'move the card to the list left / right'],
+    ['Enter', 'open the document the card links to'],
+    ['t · Space', 'tick the card off, or un-tick it'],
+    ['o', 'new card on this list'],
+    ['x', 'delete the card (asks first)'],
+    ['q · Esc', 'back to the tree'],
+  ]
+
   const titles: Record<Group, string> = {
-    entries: 'entries',
+    tree: 'spaces & folders',
+    board: 'boards',
+    documents: 'documents',
     editing: 'writing',
     sharing: 'sharing & export',
     view: 'session',
@@ -39,7 +57,7 @@
   <header>
     <span class="accent">:help</span>
     <span class="faint">everything is a key or a `:` command</span>
-    <button onclick={() => (diary.overlay = 'none')}>esc</button>
+    <button onclick={() => (workspace.overlay = 'none')}>esc</button>
   </header>
 
   <div class="cols">
@@ -47,6 +65,16 @@
       <h2>keys</h2>
       <dl>
         {#each keys as [key, description] (key)}
+          <dt>{key}</dt>
+          <dd>{description}</dd>
+        {/each}
+      </dl>
+    </section>
+
+    <section class="keys">
+      <h2>board keys</h2>
+      <dl>
+        {#each boardKeys as [key, description] (key)}
           <dt>{key}</dt>
           <dd>{description}</dd>
         {/each}

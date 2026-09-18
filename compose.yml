@@ -1,16 +1,18 @@
 services:
-  diary:
+  workspace:
     build: .
-    image: narl-diary:latest
+    image: narl-workspace:latest
     restart: unless-stopped
     env_file:
       - .env
     environment:
       # These win over anything in .env: inside the container the app must
       # listen on all interfaces and keep its state on the volume.
-      DIARY_BIND: 0.0.0.0:4242
-      DIARY_DATA_DIR: /data
+      WORKSPACE_BIND: 0.0.0.0:4242
+      WORKSPACE_DATA_DIR: /data
     volumes:
+      # Named for what it held when it was made. Renaming it would mean moving
+      # the database into a new volume by hand, which is no kind of upgrade.
       - diary-data:/data
     networks:
       - internal_net

@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 /// Failed logins get progressively slower to answer.
 ///
-/// The diary has exactly one account, so this is one counter rather than a map
+/// The workspace has exactly one account, so this is one counter rather than a map
 /// keyed by address: an attacker cannot step around it by changing source IP,
 /// and there is no per-client table to grow. The cost of that choice is that
 /// someone hammering the login can slow the owner's own attempt down — which is
@@ -19,7 +19,7 @@ struct State {
 }
 
 /// Wrong passwords happen; the first few are answered at full speed.
-const FREE_ATTEMPTS: u32 = 3;
+pub const FREE_ATTEMPTS: u32 = 3;
 const MAX_DELAY: i64 = 30;
 
 /// 1s, 2s, 4s, 8s… up to `MAX_DELAY`, starting once the free attempts are used.
@@ -40,10 +40,13 @@ impl LoginThrottle {
         }
     }
 
-    pub fn record_failure(&self) {
+    /// Returns how many failures have piled up, so the caller can decide
+    /// whether this one is worth telling anybody about.
+    pub fn record_failure(&self) -> u32 {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         state.failures = state.failures.saturating_add(1);
         state.next_allowed = crate::now() + delay_after(state.failures);
+        state.failures
     }
 
     pub fn record_success(&self) {

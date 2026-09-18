@@ -19,9 +19,9 @@ use crate::{
     state::AppState,
 };
 
-/// Media referenced from an entry body always looks like `/api/media/<uuid>`,
-/// which is how an entry claims ownership of the files it embeds.
-static MEDIA_REF: LazyLock<Regex> = LazyLock::new(|| {
+/// Media referenced from a document body always looks like `/api/media/<uuid>`,
+/// which is how a document claims ownership of the files it embeds.
+pub(crate) static MEDIA_REF: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"/api/media/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})")
         .expect("static regex is valid")
 });
@@ -30,7 +30,7 @@ static MEDIA_REF: LazyLock<Regex> = LazyLock::new(|| {
 /// browser is only ever told it is a type that cannot execute script. Anything
 /// else — `text/html`, `image/svg+xml`, an unrecognised type — is stored and
 /// served as an opaque download instead.
-fn sanitize_mime(raw: &str) -> String {
+pub(crate) fn sanitize_mime(raw: &str) -> String {
     let base = raw
         .split(';')
         .next()
@@ -67,16 +67,16 @@ pub struct Media {
     pub size: i64,
     pub created_at: i64,
     pub url: String,
-    /// Every entry that embeds this file, which may be none or several.
-    pub entry_ids: Vec<i64>,
+    /// Every document that embeds this file, which may be none or several.
+    pub node_ids: Vec<i64>,
 }
 
 fn row_to_media(row: &sqlx::sqlite::SqliteRow) -> Media {
     let id: String = row.get("id");
     // `group_concat` gives "3,7" or NULL; queries that do not ask for it at all
     // (a fresh upload) get an empty list.
-    let entry_ids = row
-        .try_get::<Option<String>, _>("entry_ids")
+    let node_ids = row
+        .try_get::<Option<String>, _>("node_ids")
         .ok()
         .flatten()
         .map(|joined| joined.split(',').filter_map(|n| n.parse().ok()).collect())
@@ -89,7 +89,7 @@ fn row_to_media(row: &sqlx::sqlite::SqliteRow) -> Media {
         mime: row.get("mime"),
         size: row.get("size"),
         created_at: row.get("created_at"),
-        entry_ids,
+        node_ids,
     }
 }
 
@@ -164,8 +164,8 @@ pub async fn upload(
 pub async fn list(_: Session, State(state): State<AppState>) -> AppResult<Json<Vec<Media>>> {
     let rows = sqlx::query(
         "SELECT m.id, m.filename, m.mime, m.size, m.created_at,
-                (SELECT group_concat(em.entry_id)
-                 FROM entry_media em WHERE em.media_id = m.id) AS entry_ids
+                (SELECT group_concat(nm.node_id)
+                 FROM node_media nm WHERE nm.media_id = m.id) AS node_ids
          FROM media m ORDER BY m.created_at DESC LIMIT 500",
     )
     .fetch_all(&state.db)
@@ -249,21 +249,21 @@ pub async fn delete_media(state: &AppState, id: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Attach every media file the body embeds to this entry, and detach the ones
-/// it no longer mentions so they stop being reachable through its share link.
-/// Other entries keep whatever they embed; this only rewrites one entry's row.
-pub async fn link_to_entry(db: &SqlitePool, entry_id: i64, body: &str) -> AppResult<()> {
+/// Attach every media file the body embeds to this document, and detach the
+/// ones it no longer mentions so they stop being reachable through its share
+/// link. Other documents keep whatever they embed; this rewrites one node's rows.
+pub async fn link_to_node(db: &SqlitePool, node_id: i64, body: &str) -> AppResult<()> {
     let referenced: BTreeSet<String> = MEDIA_REF
         .captures_iter(body)
         .map(|c| c[1].to_lowercase())
         .collect();
 
-    // One transaction, so an entry is never momentarily attached to nothing —
+    // One transaction, so a document is never momentarily attached to nothing —
     // which would blank its images for anyone reading its share link.
     let mut tx = db.begin().await?;
 
-    sqlx::query("DELETE FROM entry_media WHERE entry_id = ?1")
-        .bind(entry_id)
+    sqlx::query("DELETE FROM node_media WHERE node_id = ?1")
+        .bind(node_id)
         .execute(&mut *tx)
         .await?;
 
@@ -271,10 +271,10 @@ pub async fn link_to_entry(db: &SqlitePool, entry_id: i64, body: &str) -> AppRes
         // Selecting from `media` rather than binding the id directly means a
         // body that still mentions a since-deleted file saves fine.
         sqlx::query(
-            "INSERT OR IGNORE INTO entry_media (entry_id, media_id)
+            "INSERT OR IGNORE INTO node_media (node_id, media_id)
              SELECT ?1, id FROM media WHERE id = ?2",
         )
-        .bind(entry_id)
+        .bind(node_id)
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -284,19 +284,32 @@ pub async fn link_to_entry(db: &SqlitePool, entry_id: i64, body: &str) -> AppRes
     Ok(())
 }
 
-/// The files this entry embeds that no other entry does — the ones that become
-/// unreachable once it is gone.
-pub async fn exclusive_media(db: &SqlitePool, entry_id: i64) -> AppResult<Vec<String>> {
-    let rows = sqlx::query(
-        "SELECT em.media_id AS id
-         FROM entry_media em
-         WHERE em.entry_id = ?1
+/// The files embedded somewhere in `node_ids` and nowhere outside it — the ones
+/// that become unreachable once those nodes are gone. A whole subtree is asked
+/// about at once, because deleting a folder deletes everything under it and a
+/// file shared between two of its documents is still exclusive to the subtree.
+pub async fn exclusive_media(db: &SqlitePool, node_ids: &[i64]) -> AppResult<Vec<String>> {
+    if node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Ids are i64 straight out of the database, so there is nothing to bind:
+    // the list is built as literals to keep it one statement of any length.
+    let list = node_ids
+        .iter()
+        .map(i64::to_string)
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let rows = sqlx::query(&format!(
+        "SELECT DISTINCT nm.media_id AS id
+         FROM node_media nm
+         WHERE nm.node_id IN ({list})
            AND NOT EXISTS (
-               SELECT 1 FROM entry_media other
-               WHERE other.media_id = em.media_id AND other.entry_id <> ?1
-           )",
-    )
-    .bind(entry_id)
+               SELECT 1 FROM node_media other
+               WHERE other.media_id = nm.media_id AND other.node_id NOT IN ({list})
+           )"
+    ))
     .fetch_all(db)
     .await?;
 

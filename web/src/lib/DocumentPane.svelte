@@ -1,47 +1,61 @@
 <script lang="ts">
   import { runCommand } from './commands'
   import { renderMarkdown } from './markdown'
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
   import { formatStamp, formatWeekday, isTouchDevice, relative } from './util'
 
-  const entry = $derived(diary.open!)
-  const html = $derived(renderMarkdown(diary.editing ? diary.draft.body : entry.body))
+  const doc = $derived(workspace.open!)
+  const html = $derived(renderMarkdown(workspace.editing ? workspace.draft.body : doc.body))
   const words = $derived(
-    (diary.editing ? diary.draft.body : entry.body).split(/\s+/).filter(Boolean).length,
+    (workspace.editing ? workspace.draft.body : doc.body).split(/\s+/).filter(Boolean).length,
   )
   /*
    * Only the token half of a share link is recoverable — the key lives in the
    * fragment, and the server kept nothing but its hash — so the bar shows the
    * link's shape and offers a fresh one rather than a copy of the old.
    */
-  const sharePath = $derived(entry.share_token ? `${location.origin}/s/${entry.share_token}#…` : null)
+  const sharePath = $derived(doc.share_token ? `${location.origin}/s/${doc.share_token}#…` : null)
+
+  /**
+   * `/n/<space>/<slug>` links — the ones the importer writes between imported
+   * documents — are followed in place rather than reloading the application.
+   */
+  function follow(event: MouseEvent) {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return
+    const anchor = (event.target as HTMLElement | null)?.closest('a')
+    const href = anchor?.getAttribute('href') ?? ''
+    if (!href.startsWith('/n/')) return
+    event.preventDefault()
+    const path = href.slice(3).split('#')[0]
+    void workspace.guard(() => workspace.openPath(decodeURIComponent(path)))
+  }
 </script>
 
 <section class="pane">
   <header>
     <div class="meta">
-      <span class="accent">entry:{entry.id}</span>
-      <span class="faint">{formatStamp(diary.draft.created_at)} {formatWeekday(diary.draft.created_at)}</span>
+      <span class="accent">{workspace.here}/{doc.slug}</span>
+      <span class="faint">{formatStamp(workspace.draft.created_at)} {formatWeekday(workspace.draft.created_at)}</span>
       <span class="faint">·</span>
-      <span class="faint">edited {relative(entry.updated_at)}</span>
+      <span class="faint">edited {relative(doc.updated_at)}</span>
       <span class="faint">·</span>
       <span class="faint">{words} words</span>
-      {#if diary.dirty}<span class="warn">[+]</span>{/if}
+      {#if workspace.dirty}<span class="warn">[+]</span>{/if}
     </div>
 
     <div class="actions">
       {#if isTouchDevice}
         <button onclick={() => runCommand('q')}>← list</button>
       {/if}
-      {#if diary.editing}
+      {#if workspace.editing}
         <button onclick={() => runCommand('w')}>:w</button>
         <button onclick={() => runCommand('upload')}>attach</button>
         <button onclick={() => runCommand('wq')}>done</button>
       {:else}
         <button onclick={() => runCommand('e')}>edit</button>
       {/if}
-      <button class:on={entry.shared} onclick={() => runCommand(entry.shared ? 'unshare' : 'share')}>
-        {entry.shared ? 'unshare' : 'share'}
+      <button class:on={doc.shared} onclick={() => runCommand(doc.shared ? 'unshare' : 'share')}>
+        {doc.shared ? 'unshare' : 'share'}
       </button>
       <button onclick={() => runCommand('d')}>delete</button>
       <button onclick={() => runCommand('q')}>close</button>
@@ -56,12 +70,12 @@
     </div>
   {/if}
 
-  {#if diary.editing}
+  {#if workspace.editing}
     <input
       class="title"
-      placeholder="title (optional)"
-      bind:value={diary.draft.title}
-      oninput={() => diary.touch()}
+      placeholder="name (optional)"
+      bind:value={workspace.draft.name}
+      oninput={() => workspace.touch()}
       onkeydown={(event) => {
         if (event.key === 'Enter') {
           event.preventDefault()
@@ -70,7 +84,7 @@
       }}
     />
     <div class="body">
-      {#key entry.id}
+      {#key doc.id}
         {#await import('./Editor.svelte')}
           <div class="loading faint">loading editor…</div>
         {:then module}
@@ -88,12 +102,13 @@
     {/if}
   {:else}
     <div class="body reading">
-      <article class="md">
-        {#if entry.title.trim()}<h1 class="entrytitle">{entry.title}</h1>{/if}
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+      <article class="md" onclick={follow}>
+        {#if doc.name.trim()}<h1 class="entrytitle">{doc.name}</h1>{/if}
         <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised in renderMarkdown -->
         {@html html}
-        {#if !entry.body.trim()}
-          <p class="faint">this entry is empty — press <span class="accent">i</span> to write.</p>
+        {#if !doc.body.trim()}
+          <p class="faint">this document is empty — press <span class="accent">i</span> to write.</p>
         {/if}
       </article>
     </div>

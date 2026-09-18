@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { completions, runCommand, hooks } from './commands'
-  import { diary } from './store.svelte'
+  import { workspace } from './store.svelte'
 
   interface Props {
     initial: string
@@ -23,7 +23,7 @@
   $effect(() => {
     if (!isSearch) return
     const query = value.slice(1)
-    const timer = setTimeout(() => void diary.guard(() => diary.search(query)), 120)
+    const timer = setTimeout(() => void workspace.guard(() => workspace.search(query)), 120)
     return () => clearTimeout(timer)
   })
 

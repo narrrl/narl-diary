@@ -1,4 +1,7 @@
-use std::io::{Seek, SeekFrom, Write};
+use std::{
+    collections::HashMap,
+    io::{Seek, SeekFrom, Write},
+};
 
 use axum::{
     body::Body,
@@ -12,31 +15,50 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
 
 use crate::{auth::Session, error::AppResult, state::AppState};
 
-/// One entry, flattened out of the database ahead of the blocking zip work.
-struct ExportEntry {
+/// One node, flattened out of the database ahead of the blocking zip work.
+struct ExportNode {
     id: i64,
-    title: String,
+    parent_id: Option<i64>,
+    kind: String,
+    name: String,
+    slug: String,
     body: String,
-    created_at: i64,
 }
 
-/// `2026-09-05-first-light-12.md`. The id is always on the end, so two entries
-/// written on the same day under the same title cannot collide.
-fn entry_filename(entry: &ExportEntry) -> String {
-    let slug: String = entry
-        .title
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    let slug = slug.trim_matches('-').split('-').filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
-    let slug: String = slug.chars().take(60).collect();
-    let day = day_string(entry.created_at);
-    if slug.is_empty() {
-        format!("{day}-entry-{}.md", entry.id)
-    } else {
-        format!("{day}-{slug}-{}.md", entry.id)
+/// Where a document lands in the archive: the slugs of its ancestors as
+/// directories, its own slug as the file. Slugs are already unique among
+/// siblings, so the path is unique without adding the id to it.
+fn document_path(nodes: &HashMap<i64, ExportNode>, node: &ExportNode) -> String {
+    let mut segments = vec![format!("{}.md", node.slug)];
+    let mut parent = node.parent_id;
+    // Bounded by the number of nodes, so a parent chain that somehow loops
+    // cannot spin here.
+    for _ in 0..nodes.len() {
+        let Some(id) = parent else { break };
+        let Some(ancestor) = nodes.get(&id) else { break };
+        segments.push(ancestor.slug.clone());
+        parent = ancestor.parent_id;
     }
+    segments.reverse();
+    segments.join("/")
+}
+
+/// A link from one archived document to another, relative to the first. The
+/// application addresses documents as `/n/<space>/<slug>/...`, which means
+/// nothing outside the application, so the archive turns those links back into
+/// file paths — the shape they had before they were ever imported.
+fn relative_link(from: &str, to: &str) -> String {
+    let from: Vec<&str> = from.split('/').collect();
+    let to: Vec<&str> = to.split('/').collect();
+    // The last segment of `from` is the file itself, not a directory.
+    let shared = from[..from.len() - 1]
+        .iter()
+        .zip(to[..to.len() - 1].iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+
+    let up = "../".repeat(from.len() - 1 - shared);
+    format!("{up}{}", to[shared..].join("/"))
 }
 
 /// `YYYY-MM-DD` in UTC, from a Unix timestamp, without pulling in a date crate.
@@ -73,30 +95,36 @@ fn media_filename(id: &str, original: &str) -> String {
 }
 
 const README: &str = "\
-This is a complete copy of a ~/diary.
+This is a complete copy of a ~/workspace.
 
-  entries/   one markdown file per entry, named by the day it is about
-  media/     every file the entries embed
+  <space>/   one directory per space, holding the same tree of folders and
+             documents that the workspace shows; one markdown file per document
+  media/     every file the documents embed
 
-Embedded media is linked relatively, so the entries render correctly in any
-markdown reader as long as the two folders stay next to each other. Nothing
-here needs the diary application to read it.
+Embedded media, and links from one document to another, are relative — so the
+documents render and cross-link correctly in any markdown reader as long as the
+tree stays intact. Nothing here needs the workspace application to read it.
 ";
 
-/// Everything, as one zip. A diary you cannot get out of is not a diary you
+/// Everything, as one zip. A workspace you cannot get out of is not one you
 /// can trust, so this is deliberately a plain archive of plain files.
 pub async fn export(_: Session, State(state): State<AppState>) -> AppResult<Response> {
-    let entries: Vec<ExportEntry> = sqlx::query(
-        "SELECT id, title, body, created_at FROM entries ORDER BY created_at, id",
+    let nodes: HashMap<i64, ExportNode> = sqlx::query(
+        "SELECT id, parent_id, kind, name, slug, body FROM nodes ORDER BY created_at, id",
     )
     .fetch_all(&state.db)
     .await?
     .into_iter()
-    .map(|row| ExportEntry {
-        id: row.get("id"),
-        title: row.get("title"),
-        body: row.get("body"),
-        created_at: row.get("created_at"),
+    .map(|row| {
+        let node = ExportNode {
+            id: row.get("id"),
+            parent_id: row.get("parent_id"),
+            kind: row.get("kind"),
+            name: row.get("name"),
+            slug: row.get("slug"),
+            body: row.get("body"),
+        };
+        (node.id, node)
     })
     .collect();
 
@@ -127,18 +155,40 @@ pub async fn export(_: Session, State(state): State<AppState>) -> AppResult<Resp
             .map(|(id, filename)| (id.clone(), media_filename(id, filename)))
             .collect();
 
-        for entry in &entries {
-            let mut body = entry.body.clone();
+        // Every document by the address the application knows it as, so a link
+        // between two of them can be found and pointed at the file instead.
+        let addresses: HashMap<String, String> = nodes
+            .values()
+            .filter(|n| n.kind == "document")
+            .map(|n| {
+                let path = document_path(&nodes, n);
+                (format!("/n/{}", path.trim_end_matches(".md")), path)
+            })
+            .collect();
+
+        for node in nodes.values().filter(|n| n.kind == "document") {
+            let path = document_path(&nodes, node);
+            // A document three directories deep needs three steps back up to
+            // reach the media folder next to the spaces.
+            let up = "../".repeat(path.matches('/').count());
+
+            let mut body = node.body.clone();
             for (id, name) in &names {
-                body = body.replace(&format!("/api/media/{id}"), &format!("../media/{name}"));
+                body = body.replace(&format!("/api/media/{id}"), &format!("{up}media/{name}"));
             }
-            let document = if entry.title.trim().is_empty() {
+            for (address, target) in &addresses {
+                // Matching the `)` or `#` that ends a markdown link is what
+                // keeps `/n/work/a` from matching inside `/n/work/ab`.
+                body = body.replace(&format!("]({address})"), &format!("]({})", relative_link(&path, target)));
+                body = body.replace(&format!("]({address}#"), &format!("]({}#", relative_link(&path, target)));
+            }
+            let document = if node.name.trim().is_empty() {
                 body
             } else {
-                format!("# {}\n\n{body}", entry.title.trim())
+                format!("# {}\n\n{body}", node.name.trim())
             };
 
-            zip.start_file(format!("entries/{}", entry_filename(entry)), text)?;
+            zip.start_file(path, text)?;
             zip.write_all(document.as_bytes())?;
         }
 
@@ -158,7 +208,7 @@ pub async fn export(_: Session, State(state): State<AppState>) -> AppResult<Resp
     .await??;
 
     let size = file.metadata()?.len();
-    let name = format!("diary-{}.zip", day_string(crate::now()));
+    let name = format!("workspace-{}.zip", day_string(crate::now()));
 
     Ok((
         [
@@ -177,7 +227,9 @@ pub async fn export(_: Session, State(state): State<AppState>) -> AppResult<Resp
 
 #[cfg(test)]
 mod tests {
-    use super::{day_string, entry_filename, media_filename, ExportEntry};
+    use std::collections::HashMap;
+
+    use super::{day_string, document_path, media_filename, relative_link, ExportNode};
 
     #[test]
     fn renders_days_without_a_date_crate() {
@@ -187,17 +239,45 @@ mod tests {
         assert_eq!(day_string(-1), "1969-12-31");
     }
 
-    fn entry(title: &str, id: i64) -> ExportEntry {
-        ExportEntry { id, title: title.into(), body: String::new(), created_at: 0 }
+    fn tree(rows: &[(i64, Option<i64>, &str, &str)]) -> HashMap<i64, ExportNode> {
+        rows.iter()
+            .map(|(id, parent_id, kind, slug)| {
+                (
+                    *id,
+                    ExportNode {
+                        id: *id,
+                        parent_id: *parent_id,
+                        kind: (*kind).into(),
+                        name: (*slug).into(),
+                        slug: (*slug).into(),
+                        body: String::new(),
+                    },
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn entry_names_are_readable_and_unique() {
-        assert_eq!(entry_filename(&entry("First Light", 12)), "1970-01-01-first-light-12.md");
-        assert_eq!(entry_filename(&entry("", 3)), "1970-01-01-entry-3.md");
-        assert_eq!(entry_filename(&entry("!!! ???", 4)), "1970-01-01-entry-4.md");
-        // Same day, same title, different entries.
-        assert_ne!(entry_filename(&entry("a", 1)), entry_filename(&entry("a", 2)));
+    fn a_document_keeps_its_place_in_the_tree() {
+        let nodes = tree(&[
+            (1, None, "space", "work"),
+            (2, Some(1), "folder", "einarbeiten"),
+            (3, Some(2), "document", "01-was-ist-eebus"),
+            (4, Some(1), "document", "notes"),
+        ]);
+        assert_eq!(document_path(&nodes, &nodes[&3]), "work/einarbeiten/01-was-ist-eebus.md");
+        assert_eq!(document_path(&nodes, &nodes[&4]), "work/notes.md");
+    }
+
+    #[test]
+    fn a_broken_parent_chain_still_terminates() {
+        // A parent that is not in the map, and a cycle: neither may hang the
+        // export or walk off the end of the archive.
+        let orphan = tree(&[(3, Some(99), "document", "loose")]);
+        assert_eq!(document_path(&orphan, &orphan[&3]), "loose.md");
+
+        let cycle = tree(&[(1, Some(2), "folder", "a"), (2, Some(1), "document", "b")]);
+        assert!(document_path(&cycle, &cycle[&2]).ends_with("b.md"));
     }
 
     #[test]
@@ -207,5 +287,13 @@ mod tests {
         assert_eq!(media_filename("abc", "my photo (1).png"), "abc-my_photo__1_.png");
         assert_eq!(media_filename("abc", "photo.jpg"), "abc-photo.jpg");
         assert_eq!(media_filename("abc", "..."), "abc");
+    }
+
+    #[test]
+    fn links_between_documents_become_file_paths() {
+        assert_eq!(relative_link("uni/proj/readme.md", "uni/proj/sub/deep.md"), "sub/deep.md");
+        assert_eq!(relative_link("uni/proj/sub/deep.md", "uni/proj/readme.md"), "../readme.md");
+        assert_eq!(relative_link("work/a.md", "uni/b.md"), "../uni/b.md");
+        assert_eq!(relative_link("work/a.md", "work/b.md"), "b.md");
     }
 }

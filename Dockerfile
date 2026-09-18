@@ -19,7 +19,7 @@ COPY --from=web /web/dist/ ./web/dist/
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
     cargo build --release --locked \
- && cp target/release/narl-diary /usr/local/bin/narl-diary
+ && cp target/release/narl-workspace /usr/local/bin/narl-workspace
 
 # 3. Runtime. SQLite is compiled into the binary; the only thing the image has
 #    to supply is a trust store. The Proton Drive client verifies TLS against
@@ -32,11 +32,11 @@ RUN apt-get update \
  && useradd --system --uid 10001 --create-home --home-dir /home/diary diary \
  && mkdir -p /data \
  && chown diary:diary /data
-COPY --from=build /usr/local/bin/narl-diary /usr/local/bin/narl-diary
+COPY --from=build /usr/local/bin/narl-workspace /usr/local/bin/narl-workspace
 USER diary
 WORKDIR /home/diary
 VOLUME ["/data"]
-ENV DIARY_BIND=0.0.0.0:4242 \
-    DIARY_DATA_DIR=/data
+ENV WORKSPACE_BIND=0.0.0.0:4242 \
+    WORKSPACE_DATA_DIR=/data
 EXPOSE 4242
-ENTRYPOINT ["/usr/local/bin/narl-diary"]
+ENTRYPOINT ["/usr/local/bin/narl-workspace"]

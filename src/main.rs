@@ -3,6 +3,8 @@ mod backup;
 mod cli;
 mod config;
 mod error;
+mod mail;
+mod notify;
 mod routes;
 mod state;
 mod static_files;
@@ -38,10 +40,11 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         // rPGP warns on every key it re-serialises differently to how Proton
         // wrote it — a cosmetic packet-header difference, once per unlock, that
-        // otherwise buries the backup's own log lines. `DIARY_LOG` overrides
+        // otherwise buries the backup's own log lines. `WORKSPACE_LOG` overrides
         // all of this when something needs looking at.
         .with(
-            EnvFilter::try_from_env("DIARY_LOG")
+            EnvFilter::try_from_env("WORKSPACE_LOG")
+                .or_else(|_| EnvFilter::try_from_env("DIARY_LOG"))
                 .unwrap_or_else(|_| EnvFilter::new("info,pgp=error")),
         )
         .with(tracing_subscriber::fmt::layer())
@@ -72,6 +75,14 @@ async fn main() -> Result<()> {
             let db = open_db(&config).await?;
             return cli::proton_status(&db, &config).await;
         }
+        Some("mail-test") => {
+            let db = open_db(&config).await?;
+            return cli::mail_test(db, Arc::new(config)).await;
+        }
+        Some("mail-status") => {
+            let db = open_db(&config).await?;
+            return cli::mail_status(&db, &config).await;
+        }
         Some("backup-now") => {
             let db = open_db(&config).await?;
             let summary = backup::run_once(db, Arc::new(config)).await?;
@@ -94,16 +105,20 @@ async fn main() -> Result<()> {
     let backup = backup::Backup::new(db.clone(), Arc::clone(&config));
     backup::spawn(Arc::clone(&backup));
 
+    let notify = notify::Notifier::new(db.clone(), Arc::clone(&config))?;
+    notify::spawn(Arc::clone(&notify));
+
     let state = AppState {
         db,
         config,
         login_throttle: Arc::default(),
         backup,
+        notify,
     };
     serve(bind, max_upload, state).await
 }
 
-/// Open the diary database and bring it up to date. Both the server and the
+/// Open the workspace database and bring it up to date. Both the server and the
 /// subcommands need it, and both need the same pragmas.
 async fn open_db(config: &Config) -> Result<sqlx::SqlitePool> {
     let db = SqlitePoolOptions::new()
@@ -121,7 +136,7 @@ async fn open_db(config: &Config) -> Result<sqlx::SqlitePool> {
                 .foreign_keys(true),
         )
         .await
-        .context("could not open the diary database")?;
+        .context("could not open the workspace database")?;
 
     sqlx::migrate!("./migrations")
         .run(&db)
@@ -145,7 +160,7 @@ async fn serve(bind: std::net::SocketAddr, max_upload: usize, state: AppState) -
         .await
         .with_context(|| format!("could not bind {bind}"))?;
 
-    tracing::info!("narl-diary listening on http://{bind}");
+    tracing::info!("narl-workspace listening on http://{bind}");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

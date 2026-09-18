@@ -1,10 +1,12 @@
 import { api, type BackupStatus } from './api'
-import { diary, type Theme } from './store.svelte'
+import { workspace, type Theme } from './store.svelte'
 import { formatDay, parseDay } from './util'
 
 /** Filled in by App.svelte so ex-commands can reach the DOM-bound bits. */
 export const hooks = {
   pickFiles: () => {},
+  pickFolder: () => {},
+  pickArchive: () => {},
   focusEditor: () => {},
   focusList: () => {},
   insertText: (_text: string) => {},
@@ -12,7 +14,7 @@ export const hooks = {
 }
 
 /** Help groups the command list under these headings, in this order. */
-export const groups = ['entries', 'editing', 'sharing', 'view'] as const
+export const groups = ['tree', 'board', 'documents', 'editing', 'sharing', 'view'] as const
 export type Group = (typeof groups)[number]
 
 export interface CommandSpec {
@@ -27,28 +29,37 @@ export interface CommandSpec {
 }
 
 const requireOpen = () => {
-  if (!diary.open) {
-    diary.say('no entry open', 'error')
+  if (!workspace.open) {
+    workspace.say('no document open', 'error')
     return null
   }
-  return diary.open
+  return workspace.open
 }
 
 /** Move the cursor and follow it, so `:next` reads as well as `j` then `Enter`. */
 const jumpTo = async (index: number) => {
-  if (diary.entries.length === 0) return diary.say('no entries', 'error')
-  diary.cursor = Math.min(Math.max(index, 0), diary.entries.length - 1)
-  await diary.guard(() => diary.openSelected())
+  if (workspace.nodes.length === 0) return workspace.say('nothing here', 'error')
+  workspace.cursor = Math.min(Math.max(index, 0), workspace.nodes.length - 1)
+  await workspace.guard(() => workspace.openSelected())
+}
+
+/** A folder among the children currently listed, by slug or by name. */
+const findFolder = (target: string) => {
+  const wanted = target.toLowerCase()
+  return workspace.nodes.find(
+    (node) =>
+      node.kind !== 'document' && (node.slug === wanted || node.name.toLowerCase() === wanted),
+  )
 }
 
 const themes: Theme[] = ['mocha', 'green', 'amber', 'ice']
 
 const setTheme = (name: string) => {
   if (!themes.includes(name as Theme)) {
-    return diary.say(`unknown theme: ${name} — try ${themes.join(', ')}`, 'error')
+    return workspace.say(`unknown theme: ${name} — try ${themes.join(', ')}`, 'error')
   }
-  diary.setTheme(name as Theme)
-  diary.say(`theme ${name}`)
+  workspace.setTheme(name as Theme)
+  workspace.say(`theme ${name}`)
 }
 
 /** `3 minutes ago`, or `never`. Backups are read at a glance, not to the second. */
@@ -63,14 +74,14 @@ const ago = (at: number | null) => {
 
 const describeBackup = (status: BackupStatus) => {
   if (!status.configured) {
-    return diary.say('proton drive backups are off — run `narl-diary proton-login` on the server', 'error')
+    return workspace.say('proton drive backups are off — run `narl-workspace proton-login` on the server', 'error')
   }
   if (status.last_error) {
-    return diary.say(`backup failed: ${status.last_error}`, 'error')
+    return workspace.say(`backup failed: ${status.last_error}`, 'error')
   }
   const where = status.device ? `${status.device} · ` : ''
   const state = status.running ? 'running now' : status.pending ? 'changes waiting' : 'up to date'
-  diary.say(`${where}${state} · last ${ago(status.last_success_at)}`)
+  workspace.say(`${where}${state} · last ${ago(status.last_success_at)}`)
 }
 
 /** A filename that survives a download folder: `2026-09-05-first-light.md`. */
@@ -84,9 +95,9 @@ export const commands: CommandSpec[] = [
     name: 'write',
     aliases: ['w'],
     group: 'editing',
-    help: 'save the open entry',
-    run: () => diary.guard(() => diary.save()),
-    bang: { help: 'same as :w — the bang is accepted out of habit', run: () => diary.guard(() => diary.save()) },
+    help: 'save the open document',
+    run: () => workspace.guard(() => workspace.save()),
+    bang: { help: 'same as :w — the bang is accepted out of habit', run: () => workspace.guard(() => workspace.save()) },
   },
   {
     name: 'wq',
@@ -94,15 +105,15 @@ export const commands: CommandSpec[] = [
     group: 'editing',
     help: 'save and leave insert/editor mode',
     run: async () => {
-      await diary.guard(() => diary.save())
-      diary.editing = false
+      await workspace.guard(() => workspace.save())
+      workspace.editing = false
       hooks.focusList()
     },
     bang: {
       help: 'same as :wq — the bang is accepted out of habit',
       run: async () => {
-        await diary.guard(() => diary.save())
-        diary.editing = false
+        await workspace.guard(() => workspace.save())
+        workspace.editing = false
         hooks.focusList()
       },
     },
@@ -111,48 +122,212 @@ export const commands: CommandSpec[] = [
     name: 'quit',
     aliases: ['q'],
     group: 'editing',
-    help: 'close the editor, or the entry when already reading',
+    help: 'close the editor, or the document when already reading',
     run: () => {
-      if (diary.dirty) {
-        diary.say('unsaved changes — :w to write, :q! to discard', 'error')
+      if (workspace.dirty) {
+        workspace.say('unsaved changes — :w to write, :q! to discard', 'error')
         return
       }
-      if (diary.editing) diary.editing = false
+      if (workspace.editing) workspace.editing = false
       else {
-        diary.open = null
-        diary.pane = 'list'
+        workspace.open = null
+        workspace.pane = 'list'
       }
       hooks.focusList()
     },
     bang: {
       help: 'discard changes and close the editor',
       run: async () => {
-        const open = diary.open
-        diary.editing = false
-        diary.dirty = false
+        const open = workspace.open
+        workspace.editing = false
+        workspace.dirty = false
         if (open) {
-          diary.dropStash(open.id)
-          await diary.guard(() => diary.openEntry(open.id))
+          workspace.dropStash(open.id)
+          await workspace.guard(() => workspace.openNode(open.id))
         }
         hooks.focusList()
       },
     },
   },
   {
+    name: 'space',
+    aliases: ['sp'],
+    args: '[name]',
+    group: 'tree',
+    help: 'switch to a space, or list them',
+    run: async (arg) => {
+      const wanted = arg.trim().toLowerCase()
+      if (!wanted) {
+        return workspace.say(workspace.spaces.map((space) => space.slug).join(' · ') || 'no spaces')
+      }
+      const space = workspace.spaces.find(
+        (candidate) => candidate.slug === wanted || candidate.name.toLowerCase() === wanted,
+      )
+      if (!space) return workspace.say(`no such space: ${wanted} — :space! ${wanted} makes it`, 'error')
+      await workspace.guard(() => workspace.enterSpace(space.id))
+    },
+    bang: {
+      help: 'create a space with that name and switch to it',
+      run: async (arg) => {
+        if (!arg.trim()) return workspace.say('usage: :space! <name>', 'error')
+        await workspace.guard(() => workspace.createSpace(arg.trim()))
+      },
+    },
+  },
+  {
+    name: 'mkdir',
+    args: '<name>',
+    group: 'tree',
+    help: 'make a folder here',
+    run: async (arg) => {
+      if (!arg.trim()) return workspace.say('usage: :mkdir <name>', 'error')
+      await workspace.guard(() => workspace.createFolder(arg.trim()))
+    },
+  },
+  {
+    name: 'cd',
+    args: '<name|..|/>',
+    group: 'tree',
+    help: 'enter a folder, .. goes up, / back to the space',
+    run: async (arg) => {
+      const target = arg.trim()
+      await workspace.guard(async () => {
+        if (!target || target === '..') return workspace.up()
+        if (target === '/') {
+          const space = workspace.spaceId
+          return space === null ? undefined : workspace.goTo(space)
+        }
+        const folder = findFolder(target)
+        if (!folder) return workspace.say(`no such folder here: ${target}`, 'error')
+        await workspace.goTo(folder.id)
+      })
+    },
+  },
+  {
+    name: 'import',
+    aliases: ['imp'],
+    group: 'tree',
+    help: 'upload a folder into this one — markdown becomes documents, links follow',
+    run: () => hooks.pickFolder(),
+    bang: {
+      help: 'import a .zip of a folder instead of the folder itself',
+      run: () => hooks.pickArchive(),
+    },
+  },
+  {
+    name: 'board',
+    aliases: ['b'],
+    group: 'board',
+    help: "show this space's board, or go back to the tree",
+    run: () => workspace.guard(() => workspace.toggleBoardView()),
+  },
+  {
+    name: 'card',
+    aliases: ['c'],
+    args: '<title>',
+    group: 'board',
+    help: 'add a card to the list under the cursor',
+    run: async (arg) => {
+      if (!arg.trim()) return workspace.say('usage: :card <title>', 'error')
+      if (workspace.view !== 'board') await workspace.guard(() => workspace.openBoard())
+      if (workspace.view !== 'board') return
+      await workspace.guard(() => workspace.createCard(arg.trim()))
+    },
+    bang: {
+      help: 'add a card linked to the open document — Enter on it opens the document',
+      run: async (arg) => {
+        const node = workspace.open ?? workspace.selected
+        if (!node || node.kind !== 'document') {
+          return workspace.say('no document to link — open one first', 'error')
+        }
+        const title = arg.trim() || node.name.trim() || node.slug
+        if (workspace.view !== 'board') await workspace.guard(() => workspace.openBoard())
+        if (workspace.view !== 'board') return
+        await workspace.guard(() => workspace.createCard(title, node.id))
+      },
+    },
+  },
+  {
+    name: 'due',
+    args: '<yyyy-mm-dd|->',
+    group: 'board',
+    help: 'set the due date of the selected card, - clears it',
+    run: async (arg) => {
+      if (workspace.view !== 'board') return workspace.say('no board open — :board', 'error')
+      const target = arg.trim()
+      if (target === '-' || target === '') {
+        return workspace.guard(() => workspace.patchCard({ due_at: null }))
+      }
+      const at = parseDay(target)
+      if (at === null) return workspace.say('usage: :due 2026-09-30', 'error')
+      await workspace.guard(() => workspace.patchCard({ due_at: at }))
+      workspace.say(`due ${formatDay(at)}`)
+    },
+  },
+  {
+    name: 'done',
+    group: 'board',
+    help: 'tick the selected card off, or un-tick it',
+    run: () => {
+      if (workspace.view !== 'board') return workspace.say('no board open — :board', 'error')
+      return workspace.guard(() => workspace.toggleDone())
+    },
+  },
+  {
+    name: 'list',
+    args: '<name>',
+    group: 'board',
+    help: 'add a column to the board',
+    run: async (arg) => {
+      if (workspace.view !== 'board') return workspace.say('no board open — :board', 'error')
+      if (!arg.trim()) return workspace.say('usage: :list <name>', 'error')
+      await workspace.guard(() => workspace.createList(arg.trim()))
+    },
+    bang: {
+      help: 'delete the column under the cursor and every card on it',
+      run: async () => {
+        if (workspace.view !== 'board') return workspace.say('no board open — :board', 'error')
+        const list = workspace.list
+        if (!list) return workspace.say('no list selected', 'error')
+        if (!confirm(`delete the list "${list.name}" and its ${list.cards.length} cards?`)) return
+        await workspace.guard(() => workspace.deleteList())
+      },
+    },
+  },
+  {
+    name: 'move',
+    aliases: ['mv'],
+    args: '<folder|..>',
+    group: 'tree',
+    help: 'move the selected node into a folder here, or up one level',
+    run: async (arg) => {
+      const node = workspace.open ?? workspace.selected
+      if (!node) return workspace.say('nothing selected', 'error')
+      const target = arg.trim()
+      if (!target) return workspace.say('usage: :mv <folder|..>', 'error')
+
+      const destination =
+        target === '..' ? workspace.path.at(-2)?.id : findFolder(target)?.id
+      if (destination === undefined) return workspace.say(`no such folder: ${target}`, 'error')
+      if (destination === node.id) return workspace.say('a folder cannot hold itself', 'error')
+      await workspace.guard(() => workspace.moveNode(node.id, destination))
+    },
+  },
+  {
     name: 'new',
     aliases: ['n', 'o'],
     args: '[yyyy-mm-dd]',
-    group: 'entries',
-    help: 'start a new entry, optionally dated',
+    group: 'documents',
+    help: 'start a new document here, optionally dated',
     run: async (arg) => {
-      await diary.guard(async () => {
-        await diary.createEntry()
+      await workspace.guard(async () => {
+        await workspace.createDocument()
         if (arg) {
           const at = parseDay(arg)
-          if (at === null) return diary.say(`not a date: ${arg}`, 'error')
-          diary.draft.created_at = at
-          diary.dirty = true
-          await diary.save()
+          if (at === null) return workspace.say(`not a date: ${arg}`, 'error')
+          workspace.draft.created_at = at
+          workspace.dirty = true
+          await workspace.save()
         }
       })
       hooks.focusEditor()
@@ -161,17 +336,25 @@ export const commands: CommandSpec[] = [
   {
     name: 'today',
     aliases: ['t'],
-    group: 'entries',
-    help: "open today's entry, starting one if there is none yet",
+    group: 'documents',
+    help: "open today's diary entry, starting one if there is none yet",
     run: async () => {
-      await diary.guard(async () => {
-        if (diary.query) await diary.search('')
+      await workspace.guard(async () => {
+        // The diary is one space among several now, so :today goes there first
+        // rather than writing the day into whatever folder was being browsed.
+        const home = workspace.spaces.find((space) => space.slug === 'diary')
+        if (home && workspace.parentId !== home.id) await workspace.enterSpace(home.id)
+        else if (workspace.query) await workspace.search('')
+
         const midnight = new Date()
         midnight.setHours(0, 0, 0, 0)
         const from = Math.floor(midnight.getTime() / 1000)
-        const entry = diary.entries.find((e) => e.created_at >= from && e.created_at < from + 86400)
-        if (entry) await diary.openEntry(entry.id, true)
-        else await diary.createEntry()
+        const today = workspace.nodes.find(
+          (node) =>
+            node.kind === 'document' && node.created_at >= from && node.created_at < from + 86400,
+        )
+        if (today) await workspace.openNode(today.id, true)
+        else await workspace.createDocument()
       })
       hooks.focusEditor()
     },
@@ -181,106 +364,123 @@ export const commands: CommandSpec[] = [
     aliases: ['e'],
     args: '[id]',
     group: 'editing',
-    help: 'edit the open entry, or open an entry by id',
+    help: 'edit the open document, or open a node by id',
     run: async (arg) => {
-      const id = arg ? Number(arg) : diary.open?.id ?? diary.selected?.id
-      if (!id || Number.isNaN(id)) return diary.say('usage: :e <id>', 'error')
-      await diary.guard(() => diary.openEntry(id, true))
+      const id = arg ? Number(arg) : workspace.open?.id ?? workspace.selected?.id
+      if (!id || Number.isNaN(id)) return workspace.say('usage: :e <id>', 'error')
+      await workspace.guard(() => workspace.openNode(id, true))
       hooks.focusEditor()
     },
     bang: {
-      help: 'throw away the draft and re-read the entry from the server',
+      help: 'throw away the draft and re-read the document from the server',
       run: async () => {
         const open = requireOpen()
         if (!open) return
-        diary.dirty = false
-        diary.dropStash(open.id)
-        await diary.guard(() => diary.openEntry(open.id, diary.editing))
-        diary.say(`entry:${open.id} reloaded`)
+        workspace.dirty = false
+        workspace.dropStash(open.id)
+        await workspace.guard(() => workspace.openNode(open.id, workspace.editing))
+        workspace.say(`${open.slug} reloaded`)
       },
     },
   },
   {
     name: 'next',
     aliases: ['bn'],
-    group: 'entries',
-    help: 'open the next entry down the list',
-    run: () => jumpTo(diary.cursor + 1),
+    group: 'documents',
+    help: 'open the next node down the list',
+    run: () => jumpTo(workspace.cursor + 1),
   },
   {
     name: 'prev',
     aliases: ['bp'],
-    group: 'entries',
-    help: 'open the previous entry',
-    run: () => jumpTo(diary.cursor - 1),
+    group: 'documents',
+    help: 'open the previous node',
+    run: () => jumpTo(workspace.cursor - 1),
   },
   {
     name: 'first',
-    group: 'entries',
-    help: 'open the newest entry',
+    group: 'documents',
+    help: 'open the first node in the list',
     run: () => jumpTo(0),
   },
   {
     name: 'last',
-    group: 'entries',
-    help: 'open the oldest entry',
-    run: () => jumpTo(diary.entries.length - 1),
+    group: 'documents',
+    help: 'open the last node in the list',
+    run: () => jumpTo(workspace.nodes.length - 1),
   },
   {
     name: 'random',
-    group: 'entries',
-    help: 'open an entry at random — good for re-reading',
-    run: () => jumpTo(Math.floor(Math.random() * diary.entries.length)),
+    group: 'documents',
+    help: 'open something here at random — good for re-reading',
+    run: () => jumpTo(Math.floor(Math.random() * workspace.nodes.length)),
   },
   {
     name: 'delete',
     aliases: ['d', 'rm'],
     args: '[id]',
-    group: 'entries',
-    help: 'delete an entry (asks first)',
+    group: 'documents',
+    help: 'delete a node, and everything under it (asks first)',
     run: async (arg) => {
-      const id = arg ? Number(arg) : diary.open?.id ?? diary.selected?.id
-      if (!id || Number.isNaN(id)) return diary.say('nothing to delete', 'error')
-      if (!confirm(`delete entry #${id}? this cannot be undone.`)) return
-      await diary.guard(() => diary.deleteEntry(id))
+      // On the board the thing under the cursor is a card, not a node.
+      if (workspace.view === 'board') {
+        const card = workspace.card
+        if (!card) return workspace.say('no card selected', 'error')
+        if (!confirm(`delete the card "${card.title}"?`)) return
+        return workspace.guard(() => workspace.deleteCard())
+      }
+      const id = arg ? Number(arg) : workspace.open?.id ?? workspace.selected?.id
+      if (!id || Number.isNaN(id)) return workspace.say('nothing to delete', 'error')
+      const node = workspace.open?.id === id ? workspace.open : workspace.nodes.find((n) => n.id === id)
+      const what =
+        node && node.kind !== 'document'
+          ? `delete ${node.kind} "${node.name}" and everything in it?`
+          : `delete #${id}?`
+      if (!confirm(`${what} this cannot be undone.`)) return
+      await workspace.guard(() => workspace.deleteNode(id))
     },
   },
   {
-    name: 'title',
+    name: 'name',
+    aliases: ['title'],
     args: '<text>',
     group: 'editing',
-    help: 'set the title of the open entry',
+    help: 'rename the open document, or the selected card on a board',
     run: async (arg) => {
+      if (workspace.view === 'board') {
+        if (!arg.trim()) return workspace.say('usage: :name <text>', 'error')
+        return workspace.guard(() => workspace.patchCard({ title: arg.trim() }))
+      }
       if (!requireOpen()) return
-      diary.draft.title = arg
-      diary.dirty = true
-      await diary.guard(() => diary.save())
+      workspace.draft.name = arg
+      workspace.dirty = true
+      await workspace.guard(() => workspace.save())
     },
   },
   {
     name: 'date',
     args: '<yyyy-mm-dd>',
     group: 'editing',
-    help: 're-date the open entry',
+    help: 're-date the open document',
     run: async (arg) => {
       if (!requireOpen()) return
       const at = parseDay(arg)
-      if (at === null) return diary.say('usage: :date 2026-09-05', 'error')
-      diary.draft.created_at = at
-      diary.dirty = true
-      await diary.guard(() => diary.save())
+      if (at === null) return workspace.say('usage: :date 2026-09-05', 'error')
+      workspace.draft.created_at = at
+      workspace.dirty = true
+      await workspace.guard(() => workspace.save())
     },
   },
   {
     name: 'share',
     group: 'sharing',
-    help: 'publish the entry behind an unguessable link and copy it',
+    help: 'publish the document behind an unguessable link and copy it',
     run: async () => {
-      const id = diary.open?.id ?? diary.selected?.id
-      if (!id) return diary.say('no entry selected', 'error')
-      const entry = diary.open?.id === id ? diary.open : diary.selected
-      if (entry?.shared) return diary.say('already shared — :link for a new link, :unshare to revoke')
-      await diary.guard(() => diary.toggleShare(id))
+      const id = workspace.open?.id ?? workspace.selected?.id
+      if (!id) return workspace.say('nothing selected', 'error')
+      const node = workspace.open?.id === id ? workspace.open : workspace.selected
+      if (node?.shared) return workspace.say('already shared — :link for a new link, :unshare to revoke')
+      await workspace.guard(() => workspace.toggleShare(id))
     },
   },
   {
@@ -288,25 +488,25 @@ export const commands: CommandSpec[] = [
     group: 'sharing',
     help: 'revoke the share link',
     run: async () => {
-      const id = diary.open?.id ?? diary.selected?.id
-      if (!id) return diary.say('no entry selected', 'error')
-      const entry = diary.open?.id === id ? diary.open : diary.selected
-      if (!entry?.shared) return diary.say('entry is not shared')
-      await diary.guard(() => diary.toggleShare(id))
+      const id = workspace.open?.id ?? workspace.selected?.id
+      if (!id) return workspace.say('nothing selected', 'error')
+      const node = workspace.open?.id === id ? workspace.open : workspace.selected
+      if (!node?.shared) return workspace.say('not shared')
+      await workspace.guard(() => workspace.toggleShare(id))
     },
   },
   {
     name: 'link',
     group: 'sharing',
-    help: 'mint a new share link for the entry and copy it',
+    help: 'mint a new share link for the document and copy it',
     run: async () => {
-      const id = diary.open?.id ?? diary.selected?.id
-      if (!id) return diary.say('no entry selected', 'error')
-      const entry = diary.open?.id === id ? diary.open : diary.selected
-      if (!entry?.shared) return diary.say('entry is not shared — :share first', 'error')
-      await diary.guard(async () => {
-        const url = await diary.mintShareLink(id)
-        diary.say(`new link → ${url} (copied) — the previous one is dead`)
+      const id = workspace.open?.id ?? workspace.selected?.id
+      if (!id) return workspace.say('nothing selected', 'error')
+      const node = workspace.open?.id === id ? workspace.open : workspace.selected
+      if (!node?.shared) return workspace.say('not shared — :share first', 'error')
+      await workspace.guard(async () => {
+        const url = await workspace.mintShareLink(id)
+        workspace.say(`new link → ${url} (copied) — the previous one is dead`)
       })
     },
   },
@@ -314,38 +514,38 @@ export const commands: CommandSpec[] = [
     name: 'copy',
     aliases: ['yank'],
     group: 'sharing',
-    help: 'copy the whole entry to the clipboard as markdown',
+    help: 'copy the whole document to the clipboard as markdown',
     run: async () => {
       if (!requireOpen()) return
-      const { title, body } = diary.draft
-      const text = title.trim() ? `# ${title.trim()}\n\n${body}` : body
-      diary.say((await diary.copy(text)) ? 'entry copied' : 'the clipboard said no', 'info')
+      const { name, body } = workspace.draft
+      const text = name.trim() ? `# ${name.trim()}\n\n${body}` : body
+      workspace.say((await workspace.copy(text)) ? 'document copied' : 'the clipboard said no', 'info')
     },
   },
   {
     name: 'export',
     aliases: ['exp'],
     group: 'sharing',
-    help: 'download the open entry as a .md file',
+    help: 'download the open document as a .md file',
     run: () => {
       if (!requireOpen()) return
-      const { title, body, created_at } = diary.draft
-      const text = title.trim() ? `# ${title.trim()}\n\n${body}` : body
+      const { name, body, created_at } = workspace.draft
+      const text = name.trim() ? `# ${name.trim()}\n\n${body}` : body
       const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }))
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = exportName(title.trim(), created_at)
+      anchor.download = exportName(name.trim(), created_at)
       anchor.click()
       URL.revokeObjectURL(url)
-      diary.say(`wrote ${anchor.download}`)
+      workspace.say(`wrote ${anchor.download}`)
     },
     bang: {
-      help: 'download the whole diary — every entry and every file — as a zip',
+      help: 'download the whole workspace — every space, document and file — as a zip',
       run: async () => {
         // A plain navigation, so the browser streams the archive straight to
         // disk instead of the tab holding all of it in memory first.
-        await diary.flush()
-        diary.say('building the archive — the download starts on its own')
+        await workspace.flush()
+        workspace.say('building the archive — the download starts on its own')
         location.href = '/api/export'
       },
     },
@@ -361,46 +561,50 @@ export const commands: CommandSpec[] = [
     name: 'media',
     group: 'editing',
     help: 'browse everything you have uploaded',
-    run: () => diary.guard(async () => {
-      await diary.loadMedia()
-      diary.overlay = 'media'
+    run: () => workspace.guard(async () => {
+      await workspace.loadMedia()
+      workspace.overlay = 'media'
     }),
   },
   {
     name: 'search',
     aliases: ['se'],
     args: '[text]',
-    group: 'entries',
+    group: 'documents',
     help: 'full-text search (empty clears)',
-    run: (arg) => diary.guard(() => diary.search(arg)),
+    run: (arg) => workspace.guard(() => workspace.search(arg)),
   },
   {
     name: 'clear',
     aliases: ['noh'],
-    group: 'entries',
+    group: 'documents',
     help: 'clear the search filter',
-    run: () => diary.guard(() => diary.search('')),
+    run: () => workspace.guard(() => workspace.search('')),
   },
   {
     name: 'reload',
     aliases: ['r'],
-    group: 'entries',
-    help: 're-read the entry list from the server',
+    group: 'documents',
+    help: 're-read the current folder from the server',
     run: () =>
-      diary.guard(async () => {
-        await diary.refresh()
-        diary.say(`${diary.entries.length} entries`)
+      workspace.guard(async () => {
+        await workspace.refresh()
+        workspace.say(`${workspace.nodes.length} here`)
       }),
   },
   {
     name: 'stats',
     group: 'view',
-    help: 'word, line and entry counts',
+    help: 'word, line and node counts',
     run: () => {
-      const body = diary.open ? diary.draft.body : ''
+      const body = workspace.open ? workspace.draft.body : ''
       const words = body.split(/\s+/).filter(Boolean).length
-      const here = diary.open ? `entry:${diary.open.id} ${words}w ${body.split('\n').length}L · ` : ''
-      diary.say(`${here}${diary.entries.length} entries${diary.query ? ` matching "${diary.query}"` : ''}`)
+      const open = workspace.open ? `${workspace.open.slug} ${words}w ${body.split('\n').length}L · ` : ''
+      workspace.say(
+        `${open}${workspace.here || '/'} · ${workspace.nodes.length} node${workspace.nodes.length === 1 ? '' : 's'}${
+          workspace.query ? ` matching "${workspace.query}"` : ''
+        }`,
+      )
     },
   },
   {
@@ -408,46 +612,50 @@ export const commands: CommandSpec[] = [
     args: '<mocha|green|amber|ice>',
     group: 'view',
     help: 'switch the colour scheme',
-    run: (arg) => setTheme(arg.trim() || diary.theme),
+    run: (arg) => setTheme(arg.trim() || workspace.theme),
   },
   {
     name: 'set',
     args: '<option>',
     group: 'view',
-    help: 'theme=mocha|green|amber|ice, vim, novim, clipboard, noclipboard',
+    help: 'theme=mocha|green|amber|ice, vim, novim, clipboard, noclipboard, board, noboard',
     run: (arg) => {
       const option = arg.trim()
-      if (option === 'vim') return diary.setVim(true), diary.say('vim keys on')
-      if (option === 'novim') return diary.setVim(false), diary.say('vim keys off')
+      if (option === 'vim') return workspace.setVim(true), workspace.say('vim keys on')
+      if (option === 'novim') return workspace.setVim(false), workspace.say('vim keys off')
       if (option === 'clipboard')
-        return diary.setClipboard(true), diary.say('yanks go to the system clipboard')
+        return workspace.setClipboard(true), workspace.say('yanks go to the system clipboard')
       if (option === 'noclipboard')
-        return diary.setClipboard(false), diary.say('yanks stay in vim registers')
+        return workspace.setClipboard(false), workspace.say('yanks stay in vim registers')
+      // A board is a property of the space, not of this browser, so unlike the
+      // options above this one goes to the server.
+      if (option === 'board') return workspace.guard(() => workspace.setBoard(true))
+      if (option === 'noboard') return workspace.guard(() => workspace.setBoard(false))
       const theme = /^theme=(\w+)$/.exec(option)?.[1]
       if (theme) return setTheme(theme)
-      diary.say(`unknown option: ${option}`, 'error')
+      workspace.say(`unknown option: ${option}`, 'error')
     },
   },
   {
     name: 'backup',
     group: 'view',
-    help: 'when the diary was last mirrored to proton drive',
-    run: () => diary.guard(async () => describeBackup(await api.backupStatus())),
+    help: 'when the workspace was last mirrored to proton drive',
+    run: () => workspace.guard(async () => describeBackup(await api.backupStatus())),
     bang: {
-      help: 'back up to proton drive now, rather than when the diary falls quiet',
+      help: 'back up to proton drive now, rather than when the workspace falls quiet',
       run: () =>
-        diary.guard(async () => {
+        workspace.guard(async () => {
           // Whatever is in the editor belongs in the backup that was just
           // asked for, so it goes to the server before the mirror runs.
-          await diary.flush()
-          diary.say('backing up …')
+          await workspace.flush()
+          workspace.say('backing up …')
           const status = await api.backupNow()
-          if (status.last_error) return diary.say(`backup failed: ${status.last_error}`, 'error')
+          if (status.last_error) return workspace.say(`backup failed: ${status.last_error}`, 'error')
           const last = status.last
-          diary.say(
+          workspace.say(
             last
               ? `backed up · ${last.uploaded} file${last.uploaded === 1 ? '' : 's'} uploaded, ${last.skipped} unchanged`
-              : 'proton drive backups are off — run `narl-diary proton-login` on the server',
+              : 'proton drive backups are off — run `narl-workspace proton-login` on the server',
             last ? 'info' : 'error',
           )
         }),
@@ -459,14 +667,14 @@ export const commands: CommandSpec[] = [
     group: 'view',
     help: 'show the key and command reference',
     run: () => {
-      diary.overlay = diary.overlay === 'help' ? 'none' : 'help'
+      workspace.overlay = workspace.overlay === 'help' ? 'none' : 'help'
     },
   },
   {
     name: 'logout',
     group: 'view',
     help: 'end the session',
-    run: () => diary.guard(() => diary.logout()),
+    run: () => workspace.guard(() => workspace.logout()),
   },
 ]
 
@@ -482,16 +690,16 @@ export async function runCommand(line: string): Promise<void> {
   if (!input) return
 
   if (input.startsWith('/')) {
-    await diary.guard(() => diary.search(input.slice(1)))
+    await workspace.guard(() => workspace.search(input.slice(1)))
     return
   }
 
   const [head, ...rest] = input.split(/\s+/)
   const arg = rest.join(' ')
 
-  // `:12` jumps to an entry by id, the way `:12` jumps to a line in vim.
+  // `:12` jumps to a node by id, the way `:12` jumps to a line in vim.
   if (/^\d+$/.test(head)) {
-    await diary.guard(() => diary.openEntry(Number(head)))
+    await workspace.guard(() => workspace.openNode(Number(head)))
     return
   }
 
@@ -499,11 +707,11 @@ export async function runCommand(line: string): Promise<void> {
   const forced = head.endsWith('!')
   const spec = lookup.get(forced ? head.slice(0, -1) : head)
   if (!spec) {
-    diary.say(`E492: not an editor command: ${head}`, 'error')
+    workspace.say(`E492: not an editor command: ${head}`, 'error')
     return
   }
   if (forced) {
-    if (!spec.bang) return diary.say(`E477: no ! allowed: ${head}`, 'error')
+    if (!spec.bang) return workspace.say(`E477: no ! allowed: ${head}`, 'error')
     await spec.bang.run(arg)
     return
   }
