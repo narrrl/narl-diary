@@ -10,6 +10,8 @@
     ['o', 'new document here, straight into insert mode'],
     ['O', 'new folder here'],
     ['i · a', 'edit the open document'],
+    ['R', 'rename what is marked — document, folder or card'],
+    ['b', "open this space's board"],
     ['Esc · q', 'back out to the list'],
     ['/', 'full-text search, inside the current space'],
     ['n', 'clear the search'],
@@ -31,6 +33,7 @@
     ['Enter', 'open the document the card links to'],
     ['t · Space', 'tick the card off, or un-tick it'],
     ['o', 'new card on this list'],
+    ['R', 'rename the card'],
     ['x', 'delete the card (asks first)'],
     ['q · Esc', 'back to the tree'],
   ]

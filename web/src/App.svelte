@@ -135,6 +135,9 @@
       case 'o':
         cmdline = ':card '
         return true
+      case 'R':
+        cmdline = ':name '
+        return true
       case 't':
       case ' ':
         void workspace.guard(() => workspace.toggleDone())
@@ -267,6 +270,17 @@
         event.preventDefault()
         void runCommand('edit')
         break
+      case 'b':
+        // The board is a view of the space, not a row in the list, so it needs
+        // a key as plain as the one that opens a document.
+        event.preventDefault()
+        void runCommand('board')
+        break
+      case 'R':
+        // Renaming needs a name typed, and names are typed on the command line.
+        event.preventDefault()
+        cmdline = ':name '
+        break
       case 'h':
       case 'ArrowLeft':
         // Out of the document if one is open, otherwise up a level — the same
@@ -339,6 +353,8 @@
   │                             │
   │  o   write a new document   │
   │  O   make a folder          │
+  │  R   rename what is marked  │
+  │  b   this space's board     │
   │  j/k browse, Enter opens    │
   │  h   up one level           │
   │  /   search this space      │

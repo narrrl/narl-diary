@@ -442,19 +442,55 @@ export const commands: CommandSpec[] = [
   },
   {
     name: 'name',
-    aliases: ['title'],
+    aliases: ['title', 'rename'],
     args: '<text>',
     group: 'editing',
-    help: 'rename the open document, or the selected card on a board',
+    help: 'rename what is under the cursor — document, folder, or card on a board',
     run: async (arg) => {
       if (workspace.view === 'board') {
         if (!arg.trim()) return workspace.say('usage: :name <text>', 'error')
         return workspace.guard(() => workspace.patchCard({ title: arg.trim() }))
       }
-      if (!requireOpen()) return
-      workspace.draft.name = arg
-      workspace.dirty = true
-      await workspace.guard(() => workspace.save())
+      if (!arg.trim()) return workspace.say('usage: :name <text>', 'error')
+
+      // The open document is renamed through the draft, so an unsaved body is
+      // written with the new name instead of being left behind by it.
+      if (workspace.open) {
+        workspace.draft.name = arg
+        workspace.dirty = true
+        return workspace.guard(() => workspace.save())
+      }
+
+      const node = workspace.selected
+      if (!node) return workspace.say('nothing selected — :name! renames the space', 'error')
+      await workspace.guard(() => workspace.renameNode(node.id, arg))
+    },
+    bang: {
+      help: 'rename the space you are in',
+      run: async (arg) => {
+        const space = workspace.space
+        if (!space) return workspace.say('no space open', 'error')
+        if (!arg.trim()) return workspace.say('usage: :name! <text>', 'error')
+        await workspace.guard(() => workspace.renameNode(space.id, arg))
+      },
+    },
+  },
+  {
+    name: 'rmspace',
+    aliases: ['rms'],
+    args: '[name]',
+    group: 'tree',
+    help: 'delete a space and everything in it (asks first)',
+    run: async (arg) => {
+      const wanted = arg.trim().toLowerCase()
+      const space = wanted
+        ? workspace.spaces.find((s) => s.slug === wanted || s.name.toLowerCase() === wanted)
+        : workspace.space
+      if (!space) return workspace.say(`no such space: ${wanted || '(none open)'}`, 'error')
+      if (!confirm(`delete the space "${space.name}" and everything in it? this cannot be undone.`)) {
+        return
+      }
+      await workspace.guard(() => workspace.deleteSpace(space.id))
     },
   },
   {

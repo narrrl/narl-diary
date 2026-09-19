@@ -45,8 +45,8 @@
       {workspace.board?.lists.reduce((n, list) => n + list.cards.length, 0) ?? 0} cards
     </span>
     <span class="tools">
-      <button title="new card (o)" onclick={() => hooks.openCommandLine(':card ')}>+</button>
-      <button title="new list" onclick={() => hooks.openCommandLine(':list ')}>[+]</button>
+      <button title="new card on this list (o)" onclick={() => hooks.openCommandLine(':card ')}>+ card</button>
+      <button title="new list (:list &lt;name&gt;)" onclick={() => hooks.openCommandLine(':list ')}>+ list</button>
       <button title="back to the tree (:board)" onclick={() => runCommand('board')}>tree</button>
       <button title="command line (:)" onclick={() => hooks.openCommandLine(':')}>:</button>
       <button title="help (?)" onclick={() => runCommand('help')}>?</button>
@@ -91,12 +91,14 @@
               </button>
             </li>
           {:else}
-            <li class="empty faint">—</li>
+            <li class="empty faint">no cards — o adds one</li>
           {/each}
         </ul>
       </section>
     {:else}
-      <div class="empty faint">no lists — :list &lt;name&gt; makes one</div>
+      <div class="empty faint">
+        no lists yet — [+] above, or :list &lt;name&gt;, makes a column. then o, or +, adds a card to it.
+      </div>
     {/each}
   </div>
 </div>

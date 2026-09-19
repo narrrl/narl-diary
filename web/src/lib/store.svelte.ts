@@ -417,6 +417,55 @@ class Workspace {
     this.say(removed > 1 ? `deleted ${removed} nodes` : `deleted #${id}`)
   }
 
+  /**
+   * Rename anything in the tree — a document, a folder or a space. The body
+   * has to ride along because the update is a whole-node write; for the node
+   * being edited that is the draft, which would otherwise be rolled back to
+   * whatever the server still holds.
+   */
+  async renameNode(id: number, name: string) {
+    const current =
+      this.open?.id === id ? { ...this.open, body: this.draft.body } : await api.getNode(id)
+    const saved = await api.updateNode(id, {
+      name: name.trim(),
+      body: current.body,
+      created_at: current.created_at,
+    })
+    if (this.open?.id === id) {
+      this.open = saved
+      this.draft.name = saved.name
+    }
+    if (this.path.some((crumb) => crumb.id === id)) this.path = saved.path
+    if (saved.kind === 'space') this.spaces = await api.listSpaces()
+    await this.refresh()
+    this.say(`renamed to ${saved.slug}`)
+  }
+
+  /**
+   * Delete a space and everything in it. The app has to land somewhere
+   * afterwards, so it falls into the next space — or, if that was the last
+   * one, into an empty workspace that `:space! <name>` fills again.
+   */
+  async deleteSpace(id: number) {
+    const { removed } = await api.deleteNode(id)
+    this.open = null
+    this.editing = false
+    this.board = null
+    this.view = 'tree'
+    this.spaces = await api.listSpaces()
+    const next = this.spaces.find((space) => space.slug === 'diary') ?? this.spaces[0]
+    if (next) await this.enterSpace(next.id)
+    else {
+      localStorage.removeItem('diary:space')
+      this.spaceId = null
+      this.parentId = null
+      this.path = []
+      this.nodes = []
+      this.cursor = 0
+    }
+    this.say(`deleted the space and ${removed - 1} node(s) in it`)
+  }
+
   /** Reparent the node under the cursor, for `:mv`. */
   async moveNode(id: number, parentId: number) {
     await api.moveNode(id, parentId)

@@ -59,6 +59,8 @@ The desktop UI is modal. In the browse pane:
 | `o` | a new document here, straight into insert mode |
 | `O` | a new folder here |
 | `i`, `a` | edit the open entry |
+| `R` | rename what is highlighted — document, folder or space |
+| `b` | the board of this space |
 | `Esc`, `q` | back out to the document |
 | `h` | up one level in the tree |
 | `/` | full-text search (`n` clears it) |
@@ -73,9 +75,12 @@ mode, macros, `:w` to write. `:help` lists every ex command; the useful ones are
 `:w`, `:wq`, `:q!`, `:new [yyyy-mm-dd]`, `:date`, `:name`, `:share`, `:link`,
 `:upload`, `:media`, `:search`, `:backup`, `:set theme=mocha|green|amber|ice` and
 `:set novim`. The tree has its own: `:space [name]` switches (`:space! <name>`
-makes one), `:mkdir <name>` makes a folder, `:cd <name|..|/>` walks it and
-`:mv <folder|..>` moves what is selected, and `:import` uploads a folder into
-the one being browsed (`:import!` takes a `.zip` instead). The board has
+makes one, `:rmspace [name]` deletes one and everything in it), `:mkdir <name>`
+makes a folder, `:cd <name|..|/>` walks it and `:mv <folder|..>` moves what is
+selected, and `:import` uploads a folder into the one being browsed
+(`:import!` takes a `.zip` instead). `:name <text>` renames whatever is under
+the cursor — a document, a folder, or a card on a board — and `:name!` renames
+the space itself. The board has
 `:board`, `:card <title>` (`:card!` links the open document to it),
 `:due <yyyy-mm-dd|->`, `:done` and `:list <name>` (`:list!` deletes one).
 
@@ -83,10 +88,13 @@ On a touch device modal editing is turned off and the same actions are buttons.
 
 ## Boards
 
-`:board` swaps the tree for the board of the space being browsed, and swaps it
-back. Every space has one except the diary — a journal has no backlog — and
-`:set board` / `:set noboard` changes that for the space you are in. A new
-board starts with `backlog`, `doing` and `done`; `:list <name>` adds columns.
+`b`, the `board` button above the list, or `:board` swaps the tree for the board
+of the space being browsed, and swaps it back. Every space has one except the
+diary — a journal has no backlog — and `:set board` / `:set noboard` changes
+that for the space you are in (the `+board` button above the list does the
+same). A new board starts with `backlog`, `doing` and `done`; `:list <name>`
+adds columns, and `o` or the `+ card` button puts a card on the one under the
+cursor.
 
 | key | action |
 | --- | --- |

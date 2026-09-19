@@ -35,6 +35,13 @@
       {workspace.nodes.length} {workspace.nodes.length === 1 ? 'item' : 'items'}
     </span>
     <span class="tools">
+      <!-- The board is the one view with no row in the list to click, so it
+           needs a door of its own; a space without one is offered the switch. -->
+      {#if workspace.space?.has_board}
+        <button class="board" title="board (b)" onclick={() => runCommand('board')}>board</button>
+      {:else if workspace.space}
+        <button class="board faint" title="give this space a board (:set board)" onclick={() => runCommand('set board')}>+board</button>
+      {/if}
       <button title="new document (o)" onclick={() => runCommand('new')}>+</button>
       <button title="new folder (O)" onclick={() => hooks.openCommandLine(':mkdir ')}>[+]</button>
       <button title="search (/)" onclick={() => hooks.openCommandLine('/')}>/</button>
@@ -156,6 +163,8 @@
   .count { flex: 1; text-align: right; overflow: hidden; white-space: nowrap; }
   .tools { display: flex; gap: 2px; flex: none; }
   .tools button { padding: 0 6px; line-height: 18px; }
+  .tools .board { color: var(--accent); }
+  .tools .board.faint { color: var(--fg-faint); }
 
   /* Roomier tap targets where there is no keyboard. */
   @media (pointer: coarse) {
