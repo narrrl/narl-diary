@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { runCommand } from './commands'
+  import { hooks, runCommand, type ScrollAmount } from './commands'
   import { renderMarkdown } from './markdown'
   import { workspace } from './store.svelte'
   import { formatStamp, formatWeekday, isTouchDevice, relative } from './util'
@@ -15,6 +15,39 @@
    * link's shape and offers a fresh one rather than a copy of the old.
    */
   const sharePath = $derived(doc.share_token ? `${location.origin}/s/${doc.share_token}#…` : null)
+
+  let reader = $state<HTMLElement>()
+
+  /*
+   * j/k reach this pane through the window handler in App.svelte, which has no
+   * way to know how tall a line is here — so the pane does the arithmetic and
+   * says whether it scrolled anything at all.
+   */
+  $effect(() => {
+    hooks.scrollReader = (amount: ScrollAmount) => {
+      if (!reader) return false
+      const line = parseFloat(getComputedStyle(reader).lineHeight) || 24
+      const half = reader.clientHeight / 2
+      switch (amount) {
+        case 'top':
+          reader.scrollTo({ top: 0 })
+          break
+        case 'bottom':
+          reader.scrollTo({ top: reader.scrollHeight })
+          break
+        case 'halfdown':
+          reader.scrollBy({ top: half })
+          break
+        case 'halfup':
+          reader.scrollBy({ top: -half })
+          break
+        default:
+          reader.scrollBy({ top: amount * line * 3 })
+      }
+      return true
+    }
+    return () => (hooks.scrollReader = () => false)
+  })
 
   /**
    * `/n/<space>/<slug>` links — the ones the importer writes between imported
@@ -101,7 +134,7 @@
       </div>
     {/if}
   {:else}
-    <div class="body reading">
+    <div class="body reading" bind:this={reader}>
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
       <article class="md" onclick={follow}>
         {#if doc.name.trim()}<h1 class="entrytitle">{doc.name}</h1>{/if}

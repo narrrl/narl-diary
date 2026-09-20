@@ -2,6 +2,9 @@ import { api, type BackupStatus } from './api'
 import { workspace, type Theme } from './store.svelte'
 import { formatDay, parseDay } from './util'
 
+/** How far the reading pane is asked to scroll: lines, a half page, or an end. */
+export type ScrollAmount = number | 'top' | 'bottom' | 'halfdown' | 'halfup'
+
 /** Filled in by App.svelte so ex-commands can reach the DOM-bound bits. */
 export const hooks = {
   pickFiles: () => {},
@@ -10,6 +13,9 @@ export const hooks = {
   focusEditor: () => {},
   focusList: () => {},
   insertText: (_text: string) => {},
+  /* Filled in while a document is on screen and not being edited: the reading
+     pane owns the scrollback, so the list keys have somewhere to send it. */
+  scrollReader: (_amount: ScrollAmount): boolean => false,
   openCommandLine: (_initial: string) => {},
 }
 
@@ -210,7 +216,7 @@ export const commands: CommandSpec[] = [
     help: 'upload a folder into this one — markdown becomes documents, links follow',
     run: () => hooks.pickFolder(),
     bang: {
-      help: 'import a .zip of a folder instead of the folder itself',
+      help: 'import loose files, or a .zip of a folder, instead of a folder',
       run: () => hooks.pickArchive(),
     },
   },

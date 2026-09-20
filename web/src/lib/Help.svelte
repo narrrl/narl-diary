@@ -3,8 +3,9 @@
   import { workspace } from './store.svelte'
 
   const keys: [string, string][] = [
-    ['j / k · ↓ ↑', 'move down / up the list'],
-    ['gg / G', 'first / last row'],
+    ['j / k · ↓ ↑', 'move down / up the list — scroll the open document'],
+    ['gg / G', 'first / last row, or top / bottom of the document'],
+    ['Ctrl-D / Ctrl-U', 'half a page down / up the open document'],
     ['Enter · l', 'open a document, or enter a folder'],
     ['h', 'up one level, or back out of a document'],
     ['o', 'new document here, straight into insert mode'],

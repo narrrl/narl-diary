@@ -24,7 +24,7 @@
   let cmdline = $state<string | null>(null)
   let fileInput = $state<HTMLInputElement>()
   let folderInput = $state<HTMLInputElement>()
-  let archiveInput = $state<HTMLInputElement>()
+  let importInput = $state<HTMLInputElement>()
   let shell = $state<HTMLDivElement>()
   let overlayEl = $state<HTMLDivElement>()
   let pending = $state('')
@@ -42,7 +42,7 @@
   $effect(() => {
     hooks.pickFiles = () => fileInput?.click()
     hooks.pickFolder = () => folderInput?.click()
-    hooks.pickArchive = () => archiveInput?.click()
+    hooks.pickArchive = () => importInput?.click()
     hooks.focusList = () => shell?.focus()
     hooks.openCommandLine = (initial) => (cmdline = initial)
   })
@@ -196,6 +196,16 @@
     }
 
     if (cmdline !== null || isTypingTarget(event.target)) return
+
+    // Ctrl-D / Ctrl-U page the open document, as they do in a pager.
+    if (event.ctrlKey && !event.metaKey && !event.altKey && (event.key === 'd' || event.key === 'u')) {
+      if (workspace.open && !workspace.editing) {
+        event.preventDefault()
+        hooks.scrollReader(event.key === 'd' ? 'halfdown' : 'halfup')
+        return
+      }
+    }
+
     if (event.ctrlKey || event.metaKey || event.altKey) return
 
     const key = event.key
@@ -218,10 +228,18 @@
       }
     }
 
+    /*
+     * With a document open and not being edited, the reading pane owns j/k:
+     * the keys scroll what is on screen, and `h` backs out to the list, where
+     * they walk the rows again.
+     */
+    const reading = !!workspace.open && !workspace.editing
+
     // Two-key sequences: gg and dd.
     if (previous === 'g' && key === 'g') {
       event.preventDefault()
-      workspace.cursor = 0
+      if (reading) hooks.scrollReader('top')
+      else workspace.cursor = 0
       return
     }
     if (previous === 'd' && key === 'd') {
@@ -238,16 +256,19 @@
       case 'j':
       case 'ArrowDown':
         event.preventDefault()
-        workspace.move(1)
+        if (reading) hooks.scrollReader(1)
+        else workspace.move(1)
         break
       case 'k':
       case 'ArrowUp':
         event.preventDefault()
-        workspace.move(-1)
+        if (reading) hooks.scrollReader(-1)
+        else workspace.move(-1)
         break
       case 'G':
         event.preventDefault()
-        workspace.cursor = Math.max(workspace.nodes.length - 1, 0)
+        if (reading) hooks.scrollReader('bottom')
+        else workspace.cursor = Math.max(workspace.nodes.length - 1, 0)
         break
       case 'Enter':
       case 'l':
@@ -355,7 +376,7 @@
   │  O   make a folder          │
   │  R   rename what is marked  │
   │  b   this space's board     │
-  │  j/k browse, Enter opens    │
+  │  j/k browse, l opens        │
   │  h   up one level           │
   │  /   search this space      │
   │  ?   help                   │
@@ -386,7 +407,10 @@
 <!-- `webkitdirectory` is set from script: it is the one attribute browsers
      agree on for picking a folder, and no typed attribute list carries it. -->
 <input class="hidden" type="file" multiple bind:this={folderInput} onchange={importFolder} />
-<input class="hidden" type="file" accept=".zip" bind:this={archiveInput} onchange={importFolder} />
+<!-- The same import, one file at a time: a .zip is expanded, anything else
+     lands as the document or media it is. Picking a folder is the only thing
+     the folder input above can do, so single files need an input of their own. -->
+<input class="hidden" type="file" multiple bind:this={importInput} onchange={importFolder} />
 
 <style>
   .boot { display: grid; place-items: center; height: 100%; }
