@@ -12,6 +12,7 @@
     ['O', 'new folder here'],
     ['i · a', 'edit the open document'],
     ['R', 'rename what is marked — document, folder or card'],
+    ['m / p', 'pick a node up, then drop it into the folder you walk to'],
     ['b', "open this space's board"],
     ['Esc · q', 'back out to the list'],
     ['/', 'full-text search, inside the current space'],

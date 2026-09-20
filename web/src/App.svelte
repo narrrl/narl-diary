@@ -276,6 +276,15 @@
         event.preventDefault()
         void workspace.guard(() => workspace.openSelected())
         break
+      case 'm':
+        // Pick a node up here, walk to a folder, put it down with `p`.
+        event.preventDefault()
+        workspace.mark()
+        break
+      case 'p':
+        event.preventDefault()
+        void workspace.guard(() => workspace.drop())
+        break
       case 'o':
         event.preventDefault()
         void runCommand('new')

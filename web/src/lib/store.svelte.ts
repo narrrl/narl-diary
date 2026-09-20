@@ -49,6 +49,14 @@ class Workspace {
   listCursor = $state(0)
   cardCursor = $state(0)
 
+  /*
+   * The node picked up by `m`, waiting for the `p` that drops it into whatever
+   * folder the list is showing then. A move is two keystrokes apart in time
+   * because the destination is somewhere else in the tree — there is no way to
+   * name it and be somewhere else at once.
+   */
+  marked = $state<NodeSummary | null>(null)
+
   pane = $state<Pane>('list')
   vimMode = $state('normal')
   flash = $state<Flash>(null)
@@ -279,8 +287,9 @@ class Workspace {
     await this.goTo(parent.id, from.id)
   }
 
-  async refresh() {
-    const keepId = this.selected?.id
+  /** `keep` follows a node that just arrived, instead of holding the cursor. */
+  async refresh(keep?: number) {
+    const keepId = keep ?? this.selected?.id
     this.nodes = this.query
       ? await api.listNodes({ q: this.query, space: this.spaceId ?? undefined })
       : await api.listNodes({ parent: this.parentId ?? undefined })
@@ -471,6 +480,35 @@ class Workspace {
     await api.moveNode(id, parentId)
     await this.refresh()
     this.say(`moved #${id}`)
+  }
+
+  /** `m`: pick the node under the cursor up, or put it back down unmoved. */
+  mark() {
+    const node = this.selected
+    if (!node) return this.say('nothing selected', 'error')
+    if (this.marked?.id === node.id) {
+      this.marked = null
+      return this.say('unmarked')
+    }
+    this.marked = node
+    this.say(`marked ${node.name.trim() || node.slug} — p drops it in this folder`)
+  }
+
+  /** `p`: drop the marked node into the folder the list is showing. */
+  async drop() {
+    const node = this.marked
+    const parent = this.parentId
+    if (!node) return this.say('nothing marked — press m on a row first', 'error')
+    if (parent === null) return this.say('no folder open', 'error')
+    if (node.parent_id === parent) {
+      this.marked = null
+      return this.say('already here')
+    }
+
+    await api.moveNode(node.id, parent)
+    this.marked = null
+    await this.refresh(node.id)
+    this.say(`moved ${node.name.trim() || node.slug} here`)
   }
 
   /*

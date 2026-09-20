@@ -30,7 +30,7 @@
 
 <div class="sidebar">
   <div class="head">
-    <span class="accent">~/{workspace.space?.slug ?? 'diary'}</span>
+    <span class="accent name">~/{workspace.space?.slug ?? 'diary'}</span>
     <span class="faint count">
       {workspace.nodes.length} {workspace.nodes.length === 1 ? 'item' : 'items'}
     </span>
@@ -79,6 +79,7 @@
           onclick={() => pick(index)}
         >
           <span class="caret">{index === workspace.cursor ? '>' : ' '}</span>
+          {#if workspace.marked?.id === node.id}<span class="marked" title="marked — p drops it in a folder">m</span>{/if}
           <span class="time">{aside(node)}</span>
           <span class="title">{node.kind === 'document' ? '' : '/'}{label(node)}</span>
           {#if node.shared}<span class="shared" title="shared">◉</span>{/if}
@@ -158,9 +159,13 @@
   .time { color: var(--fg-faint); flex: none; font-size: 12px; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .shared { color: var(--accent); flex: none; }
+  .marked { color: var(--warn); flex: none; font-weight: 700; }
   .empty { padding: 12px 10px; }
 
-  .count { flex: 1; text-align: right; overflow: hidden; white-space: nowrap; }
+  .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The count is short and fixed-width-ish; the space name is the part that
+     can give way when the sidebar is narrow. */
+  .count { flex: none; white-space: nowrap; }
   .tools { display: flex; gap: 2px; flex: none; }
   .tools button { padding: 0 6px; line-height: 18px; }
   .tools .board { color: var(--accent); }
