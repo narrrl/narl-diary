@@ -1,7 +1,12 @@
 # Copy to compose.override.yml on the host that runs traefik.
 services:
   workspace:
-    ports: !override []
+    # Traefik only routes HTTP; SFTP (raw TCP) can't go through it, so its
+    # port is published straight to the host instead. Restrict to your IP,
+    # or leave it 127.0.0.1 and reach it over a VPN/SSH tunnel.
+    # Requires WORKSPACE_SFTP_BIND=0.0.0.0:2222 in .env to actually listen.
+    ports: !override
+      - "127.0.0.1:2222:2222"
     networks:
       - narl
       - internal_net
