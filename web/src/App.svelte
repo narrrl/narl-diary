@@ -436,7 +436,7 @@
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(28ch, 34ch) 1fr;
+    grid-template-columns: minmax(30ch, 22vw) 1fr;
   }
 
   .panes.board { grid-template-columns: 1fr; }

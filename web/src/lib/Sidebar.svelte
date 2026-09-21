@@ -165,9 +165,13 @@
   .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The count is short and fixed-width-ish; the space name is the part that
      can give way when the sidebar is narrow. */
-  .count { flex: none; white-space: nowrap; }
-  .tools { display: flex; gap: 2px; flex: none; }
-  .tools button { padding: 0 6px; line-height: 18px; }
+  .count { flex: none; white-space: nowrap; display: none; }
+  .tools { display: flex; gap: 1px; flex: none; }
+  .tools button { padding: 0 5px; line-height: 18px; }
+
+  @media (min-width: 480px) {
+    .count { display: inline; }
+  }
   .tools .board { color: var(--accent); }
   .tools .board.faint { color: var(--fg-faint); }
 

@@ -66,32 +66,37 @@
 
 <section class="pane">
   <header>
-    <div class="meta">
+    <div class="crumb" title="{workspace.here}/{doc.slug}">
       <span class="accent">{workspace.here}/{doc.slug}</span>
-      <span class="faint">{formatStamp(workspace.draft.created_at)} {formatWeekday(workspace.draft.created_at)}</span>
-      <span class="faint">·</span>
-      <span class="faint">edited {relative(doc.updated_at)}</span>
-      <span class="faint">·</span>
-      <span class="faint">{words} words</span>
       {#if workspace.dirty}<span class="warn">[+]</span>{/if}
     </div>
 
-    <div class="actions">
-      {#if isTouchDevice}
-        <button onclick={() => runCommand('q')}>← list</button>
-      {/if}
-      {#if workspace.editing}
-        <button onclick={() => runCommand('w')}>:w</button>
-        <button onclick={() => runCommand('upload')}>attach</button>
-        <button onclick={() => runCommand('wq')}>done</button>
-      {:else}
-        <button onclick={() => runCommand('e')}>edit</button>
-      {/if}
-      <button class:on={doc.shared} onclick={() => runCommand(doc.shared ? 'unshare' : 'share')}>
-        {doc.shared ? 'unshare' : 'share'}
-      </button>
-      <button onclick={() => runCommand('d')}>delete</button>
-      <button onclick={() => runCommand('q')}>close</button>
+    <div class="row">
+      <div class="meta">
+        <span class="faint">{formatStamp(workspace.draft.created_at)} {formatWeekday(workspace.draft.created_at)}</span>
+        <span class="faint">·</span>
+        <span class="faint">edited {relative(doc.updated_at)}</span>
+        <span class="faint">·</span>
+        <span class="faint">{words} words</span>
+      </div>
+
+      <div class="actions">
+        {#if isTouchDevice}
+          <button onclick={() => runCommand('q')}>← list</button>
+        {/if}
+        {#if workspace.editing}
+          <button onclick={() => runCommand('w')}>:w</button>
+          <button onclick={() => runCommand('upload')}>attach</button>
+          <button onclick={() => runCommand('wq')}>done</button>
+        {:else}
+          <button onclick={() => runCommand('e')}>edit</button>
+        {/if}
+        <button class:on={doc.shared} onclick={() => runCommand(doc.shared ? 'unshare' : 'share')}>
+          {doc.shared ? 'unshare' : 'share'}
+        </button>
+        <button onclick={() => runCommand('d')}>delete</button>
+        <button onclick={() => runCommand('q')}>close</button>
+      </div>
     </div>
   </header>
 
@@ -158,18 +163,34 @@
 
   header {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 4px;
     padding: 6px 12px;
     border-bottom: 1px solid var(--line);
     flex: none;
   }
 
-  .meta { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12px; }
-  .warn { color: var(--warn); }
-  .actions { display: flex; gap: 4px; flex-wrap: wrap; }
+  .crumb {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+  }
+
+  .meta { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 12px; min-width: 0; }
+  .warn { color: var(--warn); flex: none; }
+  .actions { display: flex; gap: 4px; flex-wrap: wrap; flex: none; }
   .actions .on { color: var(--accent); border-color: var(--accent-dim); }
 
   .sharebar {
