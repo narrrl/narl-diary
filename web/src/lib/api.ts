@@ -30,6 +30,15 @@ export interface WorkspaceNode extends NodeSummary {
   path: Crumb[]
 }
 
+/** A public key allowed to mount the workspace over SFTP. */
+export interface SshKey {
+  id: number
+  name: string
+  fingerprint: string
+  created_at: number
+  last_used_at: number | null
+}
+
 export interface SharedDocument {
   name: string
   body: string
@@ -248,4 +257,11 @@ export const api = {
 
   readShared: (token: string, key: string) =>
     request<SharedDocument>(`/share/${encodeURIComponent(token)}/${encodeURIComponent(key)}`),
+
+  listSshKeys: () => request<SshKey[]>('/ssh-keys'),
+
+  addSshKey: (name: string, public_key: string) =>
+    request<SshKey>('/ssh-keys', { method: 'POST', body: body({ name, public_key }) }),
+
+  removeSshKey: (id: number) => request<{ ok: true }>(`/ssh-keys/${id}`, { method: 'DELETE' }),
 }

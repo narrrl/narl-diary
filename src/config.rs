@@ -18,6 +18,25 @@ pub struct Config {
     pub secure_cookie: bool,
     pub backup: BackupConfig,
     pub mail: MailConfig,
+    pub sftp: SftpConfig,
+}
+
+/// The SFTP mount. Dormant until `WORKSPACE_SFTP_BIND` is set — same shape as
+/// the mail relay, because a workspace with no key registered yet should not
+/// refuse to start over a feature nobody has turned on.
+#[derive(Debug, Clone)]
+pub struct SftpConfig {
+    pub bind: Option<SocketAddr>,
+}
+
+impl SftpConfig {
+    fn from_env() -> Result<Self> {
+        let bind = var("SFTP_BIND")
+            .map(|v| v.parse())
+            .transpose()
+            .context("WORKSPACE_SFTP_BIND must look like 127.0.0.1:2222")?;
+        Ok(Self { bind })
+    }
 }
 
 /// Time of day in the configured timezone, as `HH:MM`.
@@ -194,6 +213,7 @@ impl Config {
             secure_cookie,
             backup: BackupConfig::from_env()?,
             mail: MailConfig::from_env()?,
+            sftp: SftpConfig::from_env()?,
         })
     }
 
@@ -205,6 +225,12 @@ impl Config {
     /// two are equally sensitive and equally worth putting on the same volume.
     pub fn proton_session_path(&self) -> PathBuf {
         self.data_dir.join("proton-session.json")
+    }
+
+    /// The SFTP server's own identity, generated once on first boot. Losing it
+    /// only costs a host-key warning on every client, never data.
+    pub fn sftp_host_key_path(&self) -> PathBuf {
+        self.data_dir.join("sftp_host_key")
     }
 }
 

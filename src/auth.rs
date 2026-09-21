@@ -100,7 +100,7 @@ impl FromRequestParts<AppState> for Session {
 #[cfg(test)]
 mod tests {
     use super::{credentials_match, issue_token, verify_token};
-    use crate::config::{BackupConfig, Config, MailConfig};
+    use crate::config::{BackupConfig, Config, MailConfig, SftpConfig};
 
     fn config(session_days: i64) -> Config {
         Config {
@@ -128,6 +128,7 @@ mod tests {
                 digest_at: None,
                 kinds: Vec::new(),
             },
+            sftp: SftpConfig { bind: None },
         }
     }
 

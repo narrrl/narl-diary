@@ -6,6 +6,7 @@ mod error;
 mod mail;
 mod notify;
 mod routes;
+mod sftp;
 mod state;
 mod static_files;
 mod throttle;
@@ -110,11 +111,21 @@ async fn main() -> Result<()> {
 
     let state = AppState {
         db,
-        config,
+        config: Arc::clone(&config),
         login_throttle: Arc::default(),
         backup,
         notify,
     };
+
+    if let Some(sftp_bind) = config.sftp.bind {
+        let sftp_state = state.clone();
+        tokio::spawn(async move {
+            if let Err(e) = sftp::serve(sftp_state, sftp_bind).await {
+                tracing::error!("sftp server stopped: {e:#}");
+            }
+        });
+    }
+
     serve(bind, max_upload, state).await
 }
 

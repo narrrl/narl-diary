@@ -704,6 +704,36 @@ export const commands: CommandSpec[] = [
     },
   },
   {
+    name: 'sshkey',
+    args: '[add <name> <key> | rm <name>]',
+    group: 'view',
+    help: 'list, add or remove keys allowed to mount the workspace over sftp',
+    run: (arg) =>
+      workspace.guard(async () => {
+        const trimmed = arg.trim()
+        if (trimmed === '' || trimmed === 'ls' || trimmed === 'list') {
+          const keys = await api.listSshKeys()
+          if (keys.length === 0) return workspace.say('no keys registered — :sshkey add <name> <key>')
+          return workspace.say(keys.map((k) => `${k.name} ${k.fingerprint}`).join(' · '))
+        }
+        const addMatch = /^add\s+(\S+)\s+(.+)$/.exec(trimmed)
+        if (addMatch) {
+          const [, name, key] = addMatch
+          const added = await api.addSshKey(name, key)
+          return workspace.say(`added ${added.name} (${added.fingerprint})`)
+        }
+        const rmMatch = /^rm\s+(\S+)$/.exec(trimmed)
+        if (rmMatch) {
+          const keys = await api.listSshKeys()
+          const target = keys.find((k) => k.name === rmMatch[1])
+          if (!target) return workspace.say(`no key named ${rmMatch[1]}`, 'error')
+          await api.removeSshKey(target.id)
+          return workspace.say(`removed ${target.name}`)
+        }
+        workspace.say('usage: :sshkey [add <name> <key> | rm <name>]', 'error')
+      }),
+  },
+  {
     name: 'help',
     aliases: ['h'],
     group: 'view',

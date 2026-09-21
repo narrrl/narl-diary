@@ -45,6 +45,15 @@ proton-sdk = "0.6.2"
 rpassword = "7"
 hex = "0.4"
 
+# SFTP mount: spaces and folders as a filesystem, authenticated by pubkey
+# instead of the cookie session. `ring` rather than the default `aws-lc-rs`
+# backend, because rustls (via lettre) already pulls `ring` in.
+russh = { version = "0.63", default-features = false, features = ["ring", "rsa"] }
+russh-sftp = "3"
+# Only for generating the host key at first boot — ssh-key needs an rng that
+# speaks rand_core 0.10, one major version past the `rand` used everywhere else.
+rand10 = { package = "rand", version = "0.10" }
+
 [features]
 default = []
 # Keep the Proton session in the OS keyring instead of a 0600 file. Needs a

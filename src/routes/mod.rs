@@ -6,6 +6,7 @@ pub mod import;
 pub mod media;
 pub mod session;
 pub mod share;
+pub mod ssh_keys;
 
 use axum::{
     routing::{delete, get, post, put},
@@ -41,4 +42,6 @@ pub fn api_router() -> Router<AppState> {
         .route("/media/{id}", get(media::serve).delete(media::remove))
         .route("/share/{token}/{key}", get(share::read))
         .route("/share/{token}/{key}/media/{id}", get(share::serve_media))
+        .route("/ssh-keys", get(ssh_keys::list).post(ssh_keys::add))
+        .route("/ssh-keys/{id}", delete(ssh_keys::remove))
 }
